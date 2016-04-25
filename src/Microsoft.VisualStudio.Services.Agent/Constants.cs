@@ -16,7 +16,7 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         public static class Agent
         {
-            public static readonly string Version = "2.99.0";
+            public static readonly string Version = "2.99.3";
 
 #if OS_LINUX
             public static readonly OSPlatform Platform = OSPlatform.Linux;
@@ -46,8 +46,6 @@ namespace Microsoft.VisualStudio.Services.Agent
                     {
                         Password,
                         Token,
-                        UserName,
-                        WindowsLogonAccount,
                         WindowsLogonPassword,
                     };
                 }
