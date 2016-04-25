@@ -46,6 +46,8 @@ namespace Microsoft.VisualStudio.Services.Agent
                     {
                         Password,
                         Token,
+                        UserName,
+                        WindowsLogonAccount,
                         WindowsLogonPassword,
                     };
                 }
