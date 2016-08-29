@@ -11,7 +11,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 {
     public interface IConfigurationProvider : IExtension
     {
-        Constants.Agent.AgentConfigurationProvider ConfigurationProviderType { get; }
+        string ConfigurationProviderType { get; }
 
         void InitConnection(IAgentServer agentServer);
 
@@ -63,8 +63,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
     public sealed class AutomationAgentConfiguration : ConfigurationProvider, IConfigurationProvider
     {
-        public Constants.Agent.AgentConfigurationProvider ConfigurationProviderType
-            => Constants.Agent.AgentConfigurationProvider.AutomationAgentConfiguration;
+        public string ConfigurationProviderType
+            => Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
 
         public void InitConnection(IAgentServer agentServer)
         {
@@ -145,7 +145,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         private string _projectName;
         private string _machineGroupName;
 
-        public Constants.Agent.AgentConfigurationProvider ConfigurationProviderType
+        public string ConfigurationProviderType
             => Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration;
 
         public void InitConnection(IAgentServer agentServer)

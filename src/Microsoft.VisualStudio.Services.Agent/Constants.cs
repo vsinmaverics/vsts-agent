@@ -106,10 +106,10 @@ namespace Microsoft.VisualStudio.Services.Agent
                 public const int AgentUpdating = 3;
             }
 
-            public enum AgentConfigurationProvider
+            public static class AgentConfigurationProvider
             {
-                AutomationAgentConfiguration,
-                DeploymentAgentConfiguration
+                public static readonly string BuildReleasesAgentConfiguration = "BuildReleasesAgentConfiguration";
+                public static readonly string DeploymentAgentConfiguration = "DeploymentAgentConfiguration";
             }
         }
 

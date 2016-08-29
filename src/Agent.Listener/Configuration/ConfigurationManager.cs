@@ -157,9 +157,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             string agentName = null;
             WriteSection(StringUtil.Loc("RegisterAgentSectionHeader"));
 
-            Constants.Agent.AgentConfigurationProvider agentType = command.DeploymentAgent
+            string agentType = command.DeploymentAgent
                 ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
-                : Constants.Agent.AgentConfigurationProvider.AutomationAgentConfiguration;
+                : Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
 
             var extensionManager = HostContext.GetService<IExtensionManager>();
             IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
@@ -410,9 +410,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
                     Trace.Info("Agent configured as deploymentAgent : {0}", settings.DeploymentAgent.ToString());
 
-                    Constants.Agent.AgentConfigurationProvider agentType = settings.DeploymentAgent
+                    string agentType = settings.DeploymentAgent
                    ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
-                   : Constants.Agent.AgentConfigurationProvider.AutomationAgentConfiguration;
+                   : Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
 
                     var extensionManager = HostContext.GetService<IExtensionManager>();
                     IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
