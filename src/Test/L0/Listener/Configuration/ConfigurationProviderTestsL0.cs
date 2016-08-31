@@ -18,10 +18,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
     {
         private Mock<IAgentServer> _agentServer;
         private Mock<IPromptManager> _promptManager;
-        private string _serverUrl = "https://localhost";
         private string _collectionName = "testCollectionName";
         private int _expectedPoolId = 7;
         private string _projectName = "testProjectName";
+        private string _machineGroupName = "testMachineGroup";
 
         public ConfigurationProviderTestsL0()
         {
@@ -59,28 +59,117 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 
 
                 trace.Info("Preparing command line arguments");
+                string expectedBaseUrl = "https://localhost:8080/tfs";
+                string serverUrl = string.Format("https://localhost:8080/tfs/{0}/{1}", _collectionName, _projectName);
+
                 var command = new CommandSettings(
                     tc,
                     new[]
                     {
                        "configure",
-                       "--url", _serverUrl,
-                       "--projectname", _projectName,
-                       "--collectionname", _collectionName
+                       "--url", serverUrl,
+                       "--machinegroupname",_machineGroupName
                     });
 
+                string expectedProjectName = null;
+                string expectedMachineGroup = null;
                 var expectedQueues = new List<TaskAgentQueue>() { new TaskAgentQueue() { Id = 2, Pool = new TaskAgentPoolReference(new Guid(), _expectedPoolId) } };
-                _agentServer.Setup(x => x.GetAgentQueuesAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.FromResult(expectedQueues));
+                _agentServer.Setup(x => x.GetAgentQueuesAsync(It.IsAny<string>(), It.IsAny<string>())).Callback<string, string>(
+                    (proj, queue) =>
+                    {
+                        expectedProjectName = proj ;
+                        expectedMachineGroup = queue;
+                    }).Returns(Task.FromResult(expectedQueues));
+
+                string baseUrl = deploymenProvider.GetServerUrl(command);
+                trace.Info("Verify base url");
+                Assert.True(expectedBaseUrl.Equals(baseUrl));
 
                 trace.Info("Init the deployment provider");
                 deploymenProvider.InitConnection(_agentServer.Object);
-                deploymenProvider.InitConnectionWithCollection(command, _serverUrl, new TestAgentCredential().GetVssCredentials(tc));
 
                 int poolId = deploymenProvider.GetPoolId(command).Result;
 
                 trace.Info("Verifying poolId returned by deployment provider");
                 Assert.True(poolId.Equals(_expectedPoolId));
+
+                trace.Info("Verifying GetAgentQueuesAsync get called with correct project name");
+                Assert.True(_projectName.Equals(expectedProjectName));
+
+                trace.Info("Verifying GetAgentQueuesAsync get called with correct machineGroup name");
+                Assert.True(_machineGroupName.Equals(expectedMachineGroup));
             }
         }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "ConfigurationManagement")]
+        public void ShouldThrowForVSTSUrlWithoutProjectForDeploymentAgentScenario()
+        {
+            string vstsUrlWithoutProject = "https://L0ConfigTest.visualstudio.com";
+            using (TestHostContext tc = CreateTestContext())
+            {
+                Tracing trace = tc.GetTrace();
+
+                trace.Info("Creating Deployment Config Provide");
+                var command = new CommandSettings(
+                    tc,
+                    new[]
+                    {
+                       "configure",
+                       "--url", vstsUrlWithoutProject
+                    });
+
+                IConfigurationProvider deploymenProvider = new DeploymentAgentConfiguration();
+                deploymenProvider.Initialize(tc);
+                try
+                {
+                    deploymenProvider.GetServerUrl(command);
+                    Assert.True(false,
+                        string.Format("Url validation should throw, not project provided with {0}",
+                            vstsUrlWithoutProject));
+                }
+                catch (Exception)
+                {
+                    // Exceptions are expected here
+                }
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "ConfigurationManagement")]
+        public void ShouldThrowForOnPremUrlWithoutCollectionAndProjectForDeploymentAgentScenario()
+        {
+            string tfsUrlWithoutCollectionAndProject = "https://localhost:8080/tfs";
+            using (TestHostContext tc = CreateTestContext())
+            {
+                Tracing trace = tc.GetTrace();
+
+                trace.Info("Creating Deployment Config Provide");
+                var command = new CommandSettings(
+                    tc,
+                    new[]
+                    {
+                       "configure",
+                       "--url", tfsUrlWithoutCollectionAndProject
+                    });
+
+                IConfigurationProvider deploymenProvider = new DeploymentAgentConfiguration();
+                deploymenProvider.Initialize(tc);
+                try
+                {
+                    deploymenProvider.GetServerUrl(command);
+                    Assert.True(false,
+                        string.Format("Url validation should throw, not project provided with {0}",
+                            tfsUrlWithoutCollectionAndProject));
+                }
+                catch (Exception)
+                {
+                    // Exceptions are expected here
+                }
+            }
+        }
+
     }
 }

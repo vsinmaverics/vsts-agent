@@ -112,6 +112,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                     throw new NotSupportedException();
             }
 
+            // Create the configuration provider as per agent type.....
+            string agentType = command.MachineGroup
+                ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
+                : Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
+
+            var extensionManager = HostContext.GetService<IExtensionManager>();
+            IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
+
             // TODO: Check if its running with elevated permission and stop early if its not
 
             // Loop getting url and creds until you can connect
@@ -122,7 +130,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             while (true)
             {
                 // Get the URL
-                serverUrl = command.GetUrl();
+                serverUrl = agentProvider.GetServerUrl(command);
 
                 // Get the credentials
                 credProvider = GetCredentialProvider(command, serverUrl);
@@ -131,7 +139,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 try
                 {
                     // Validate can connect.
-                    await TestConnectAsync(serverUrl, creds);
+                    _agentServer = await agentProvider.TestConnectAsync(serverUrl, creds);
                     Trace.Info("Connect complete.");
                     break;
                 }
@@ -157,17 +165,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             string agentName = null;
             WriteSection(StringUtil.Loc("RegisterAgentSectionHeader"));
 
-            string agentType = command.DeploymentAgent
-                ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
-                : Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
-
-            var extensionManager = HostContext.GetService<IExtensionManager>();
-            IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
-            agentProvider.InitConnection(_agentServer);
-            if (!IsHosted(serverUrl))
-            {
-                agentProvider.InitConnectionWithCollection(command, serverUrl, creds);
-            }
             poolId = await agentProvider.GetPoolId(command);
             
             TaskAgent agent;
@@ -332,7 +329,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 PoolName = poolName,
                 ServerUrl = serverUrl,
                 WorkFolder = workFolder,
-                DeploymentAgent = command.DeploymentAgent
+                MachineGroup = command.MachineGroup
             };
 
             // This is required in case agent is configured as DeploymentAgent. It will make entry for projectName and MachineGroup
@@ -408,9 +405,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                     await agentSvr.ConnectAsync(conn);
                     Trace.Info("Connect complete.");
 
-                    Trace.Info("Agent configured as deploymentAgent : {0}", settings.DeploymentAgent.ToString());
+                    Trace.Info("Agent configured as deploymentAgent : {0}", settings.MachineGroup.ToString());
 
-                    string agentType = settings.DeploymentAgent
+                    string agentType = settings.MachineGroup
                    ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
                    : Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
 
@@ -476,7 +473,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             var credentialManager = HostContext.GetService<ICredentialManager>();
             // Get the auth type. On premise defaults to negotiate (Kerberos with fallback to NTLM).
             // Hosted defaults to PAT authentication.
-            string defaultAuth = IsHosted(serverUrl) ? Constants.Configuration.PAT :
+            string defaultAuth = UrlUtil.IsHosted(serverUrl) ? Constants.Configuration.PAT :
                 (Constants.Agent.Platform == Constants.OSPlatform.Windows ? Constants.Configuration.Integrated : Constants.Configuration.Negotiate);
             string authType = command.GetAuth(defaultValue: defaultAuth);
 
@@ -510,12 +507,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             _term.WriteLine();
             _term.WriteLine($">> {message}:");
             _term.WriteLine();
-        }
-
-        private bool IsHosted(string serverUrl)
-        {
-            return serverUrl.IndexOf("visualstudio.com", StringComparison.OrdinalIgnoreCase) != -1
-                || serverUrl.IndexOf("tfsallin.net", StringComparison.OrdinalIgnoreCase) != -1;
         }
     }
 }

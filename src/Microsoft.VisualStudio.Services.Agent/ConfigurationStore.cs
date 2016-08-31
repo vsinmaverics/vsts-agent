@@ -37,7 +37,7 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         // This flag is used to set if agent is configured as deployment agent or automation agent.
         [DataMember(EmitDefaultValue = false)]
-        public bool DeploymentAgent { get; set; }
+        public bool MachineGroup { get; set; }
 
         [DataMember(EmitDefaultValue = false)]
         public string ProjectName { get; set; }

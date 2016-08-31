@@ -699,10 +699,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             using (TestHostContext hc = CreateTestContext())
             {
                 // Arrange.
-                var command = new CommandSettings(hc, args: new string[] { "--deploymentagent" });
+                var command = new CommandSettings(hc, args: new string[] { "--machinegroup" });
 
                 // Act.
-                bool actual = command.DeploymentAgent;
+                bool actual = command.MachineGroup;
 
                 // Assert.
                 Assert.True(actual);
@@ -729,7 +729,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                     .Returns("TestProject");
 
                 // Act.
-                string actual = command.GetProjectName();
+                string actual = command.GetProjectName(string.Empty);
 
                 // Assert.
                 Assert.Equal("TestProject", actual);
@@ -760,33 +760,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
 
                 // Assert.
                 Assert.Equal("Test Machine Group", actual);
-            }
-        }
-
-        [Fact]
-        [Trait("Level", "L0")]
-        [Trait("Category", nameof(CommandSettings))]
-        public void PromptsForCollectionName()
-        {
-            using (TestHostContext hc = CreateTestContext())
-            {
-                // Arrange.
-                var command = new CommandSettings(hc, args: new string[0]);
-                _promptManager
-                    .Setup(x => x.ReadValue(
-                        Constants.Agent.CommandLine.Args.CollectionName, // argName
-                        StringUtil.Loc("CollectionName"), // description
-                        false, // secret
-                        string.Empty, // defaultValue
-                        Validators.NonEmptyValidator, // validator
-                        false)) // unattended
-                    .Returns("TestCollection");
-
-                // Act.
-                string actual = command.GetCollectionName(string.Empty);
-
-                // Assert.
-                Assert.Equal("TestCollection", actual);
             }
         }
 

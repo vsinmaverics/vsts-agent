@@ -164,7 +164,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "ConfigurationManagement")]
-        public async Task CanEnsureDeploymentAgentConfigureVSTSScenario()
+        public async Task CanEnsureMachineGroupAgentConfigureVSTSScenario()
         {
             using (TestHostContext tc = CreateTestContext())
             {
@@ -174,6 +174,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 IConfigurationManager configManager = new ConfigurationManager();
                 configManager.Initialize(tc);
 
+                string url = _expectedVSTSServerUrl + "/" + _expectedProjectName;
                 trace.Info("Preparing command line arguments for vsts scenario");
                 var command = new CommandSettings(
                     tc,
@@ -183,11 +184,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 #if !OS_WINDOWS
                        "--acceptteeeula",
 #endif
-                        "--deploymentagent",
-                        "--url", _expectedVSTSServerUrl,
+                        "--machinegroup",
+                        "--url", url,
                         "--agent", _expectedAgentName,
                         "--machinegroupname", _expectedMachineGroupName,
-                        "--projectname", _expectedProjectName,
                         "--work", _expectedWorkFolder,
                         "--auth", _expectedAuthType,
                         "--token", _expectedToken
@@ -210,10 +210,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 trace.Info("Configured, verifying all the parameter value");
                 var s = configManager.LoadSettings();
                 Assert.NotNull(s);
-                Assert.True(s.ServerUrl.Equals(_expectedVSTSServerUrl));
+                Assert.True(s.ServerUrl.Equals(_expectedVSTSServerUrl,StringComparison.CurrentCultureIgnoreCase));
                 Assert.True(s.AgentName.Equals(_expectedAgentName));
                 Assert.True(s.PoolId.Equals(3));
                 Assert.True(s.WorkFolder.Equals(_expectedWorkFolder));
+                Assert.True(s.MachineGroupName.Equals(_expectedMachineGroupName));
             }
         }
         

@@ -23,7 +23,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
         public bool NoStart => TestFlag(Constants.Agent.CommandLine.Flags.NoStart);
         public bool Unattended => TestFlag(Constants.Agent.CommandLine.Flags.Unattended);
         public bool Version => TestFlag(Constants.Agent.CommandLine.Flags.Version);
-        public bool DeploymentAgent => TestFlag(Constants.Agent.CommandLine.Flags.DeploymentAgent);
+        public bool MachineGroup => TestFlag(Constants.Agent.CommandLine.Flags.MachineGroup);
 
         // Constructor.
         public CommandSettings(IHostContext context, string[] args)
@@ -115,11 +115,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetUrl()
+        public string GetUrl(bool isMachineGroup = false)
         {
+            string urlDescription = isMachineGroup ? StringUtil.Loc("ServerUrlForMachineGroupAgent") : StringUtil.Loc("ServerUrl");
+
             return GetArgOrPrompt(
                 name: Constants.Agent.CommandLine.Args.Url,
-                description: StringUtil.Loc("ServerUrl"),
+                description: urlDescription,
                 defaultValue: string.Empty,
                 validator: Validators.ServerUrlValidator);
         }
@@ -133,20 +135,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetProjectName()
+        public string GetProjectName(string defaultValue)
         {
             return GetArgOrPrompt(
                 name: Constants.Agent.CommandLine.Args.ProjectName,
                 description: StringUtil.Loc("ProjectName"),
-                defaultValue: string.Empty,
-                validator: Validators.NonEmptyValidator);
-        }
-
-        public string GetCollectionName(string defaultValue)
-        {
-            return GetArgOrPrompt(
-                name: Constants.Agent.CommandLine.Args.CollectionName,
-                description: StringUtil.Loc("CollectionName"),
                 defaultValue: defaultValue,
                 validator: Validators.NonEmptyValidator);
         }

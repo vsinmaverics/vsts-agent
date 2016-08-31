@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.TeamFoundation.Common;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
 
@@ -11,11 +12,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 {
     public interface IConfigurationProvider : IExtension
     {
-        string ConfigurationProviderType { get; }
-
         void InitConnection(IAgentServer agentServer);
 
-        void InitConnectionWithCollection(CommandSettings command, string tfsUrl, VssCredentials creds);
+        string ConfigurationProviderType { get; }
+
+        string GetServerUrl(CommandSettings command);
+
+        Task<IAgentServer> TestConnectAsync(string tfsUrl, VssCredentials creds);
 
         Task<int> GetPoolId(CommandSettings command);
 
@@ -59,6 +62,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         {
             return _agentServer.DeleteAgentAsync(poolId, agentId);
         }
+
+        protected async Task TestConnectionAsync(string url, VssCredentials creds)
+        {
+            _term.WriteLine(StringUtil.Loc("ConnectingToServer"));
+            VssConnection connection = ApiUtil.CreateConnection(new Uri(url), creds);
+
+            _agentServer = HostContext.CreateService<IAgentServer>();
+            await _agentServer.ConnectAsync(connection);
+        }
     }
 
     public sealed class AutomationAgentConfiguration : ConfigurationProvider, IConfigurationProvider
@@ -71,14 +83,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             InitializeServerConnection(agentServer);
         }
 
-        public void InitConnectionWithCollection(CommandSettings command, string tfsUrl, VssCredentials creds)
+        public void UpdateAgentSetting(AgentSettings settings)
         {
             // No implementation required
         }
 
-        public void UpdateAgentSetting(AgentSettings settings)
+        public string GetServerUrl(CommandSettings command)
         {
-            // No implementation required
+            return command.GetUrl(false);
         }
 
         public async Task<int> GetPoolId(CommandSettings command)
@@ -122,6 +134,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             return DeleteAgent(agentPoolId,agentId);
         }
 
+        public async Task<IAgentServer> TestConnectAsync(string url, VssCredentials creds)
+        {
+            await TestConnectionAsync(url, creds);
+            return _agentServer;
+        }
+
         private async Task<int> GetPoolIdAsync(string poolName)
         {
             int poolId = 0;
@@ -141,48 +159,90 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
     public sealed class DeploymentAgentConfiguration : ConfigurationProvider, IConfigurationProvider
     {
-        private IAgentServer _collectionAgentServer;
+        private IAgentServer _collectionAgentServer =null;
         private string _projectName;
+        private string _collectionName;
         private string _machineGroupName;
+        private string _serverUrl;
+        private bool _isHosted = false;
 
         public string ConfigurationProviderType
             => Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration;
 
         public void InitConnection(IAgentServer agentServer)
         {
-            Trace.Info("Agent is a DeploymentAgent");
             InitializeServerConnection(agentServer);
-
-            // Init it with default agent server, if collection flow is required, InitConnectionWithCollection() will take care!
-            _collectionAgentServer = agentServer;
         }
 
-        public async void InitConnectionWithCollection(CommandSettings command, string tfsUrl, VssCredentials creds)
+        public string GetServerUrl(CommandSettings command)
         {
-            string collectionName;
-            Trace.Info("Get the Collection name for tfs and validate the connection");
-            // No need to loop for cread, as creds are already validated with ConfigManager!
-            while (true)
-            {
-                // Get the Collection Name
-                collectionName = command.GetCollectionName("DefaultCollection");
+            _serverUrl =  command.GetUrl(true);
+            Trace.Info("url - {0}", _serverUrl);
 
-                UriBuilder uriBuilder = new UriBuilder(new Uri(tfsUrl));
-                uriBuilder.Path = uriBuilder.Path + "/" + collectionName;
-                Trace.Info("Tfs Ulr to connect - {0}", uriBuilder.Uri.AbsoluteUri);
-                try
+            string baseUrl = _serverUrl;
+            _isHosted = UrlUtil.IsHosted(_serverUrl);
+
+            // VSTS account url - Do validation of server Url includes project name 
+            // On-prem tfs Url - Do validation of tfs Url includes collection and project name 
+
+            Uri uri = new Uri(_serverUrl);                                   //e.g On-prem => http://myonpremtfs:8080/tfs/defaultcollection/myproject
+                                                                             //e.g VSTS => https://myvstsaccount.visualstudio.com/myproject
+
+            string urlAbsolutePath = uri.AbsolutePath;                       //e.g tfs/defaultcollection/myproject
+                                                                             //e.g myproject
+            string[] urlTokenParts = urlAbsolutePath.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);      //e.g tfs,defaultcollection,myproject
+            int tokenCount = urlTokenParts.Length;
+
+            if (tokenCount == 0)
+            {
+                if (! _isHosted)
                 {
-                    // Validate can connect.
-                    await TestConnectAsync(uriBuilder.Uri.AbsoluteUri, creds);
-                    Trace.Info("Connect complete.");
-                    break;
+                    ThrowExceptionForOnPremUrl();
                 }
-                catch (Exception e) when (!command.Unattended)
+                else
                 {
-                    _term.WriteError(e);
-                    _term.WriteError(StringUtil.Loc("FailedToConnect"));
+                    ThrowExceptionForVSTSUrl();
                 }
             }
+            
+            // for onprem ensure collection/project is format
+            if (! _isHosted)
+            {
+                Trace.Info("Provided url is for onprem tfs");
+                
+                if (tokenCount <= 1)
+                {
+                    ThrowExceptionForOnPremUrl();
+                }
+                _collectionName = urlTokenParts[tokenCount-2];
+                _projectName = urlTokenParts[tokenCount-1];
+                Trace.Info("collectionName - {0}", _collectionName);
+
+                baseUrl = _serverUrl.Replace(_projectName, "").Replace(_collectionName, "").TrimEnd(new char[] { '/'});
+            }
+            else
+            {
+                Trace.Info("Provided url is for vsts account");
+                _projectName = urlTokenParts.Last();
+
+                baseUrl = new Uri(_serverUrl).GetLeftPart(UriPartial.Authority);
+            }
+
+            Trace.Info("projectName - {0}", _projectName);
+
+            return baseUrl;
+        }
+
+        public async Task<IAgentServer> TestConnectAsync(string url, VssCredentials creds)
+        {
+            if (!_isHosted && !_collectionName.IsNullOrEmpty()) 
+            {
+                TestConnectionWithCollection(url, creds);   // For on-prm validate the collection by making the connection
+            }
+
+            await TestConnectionAsync(url, creds);
+
+            return _agentServer;
         }
 
         public async Task<int> GetPoolId(CommandSettings command)
@@ -190,7 +250,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             int poolId = 0;
             while (true)
             {
-                _projectName = command.GetProjectName();
                 _machineGroupName = command.GetMachineGroupName();
                 try
                 {
@@ -207,6 +266,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 }
 
                 _term.WriteError(StringUtil.Loc("FailedToFindPool"));
+
+                // In case of failure ensure to get the project name again
+                _projectName = command.GetProjectName(_projectName);
             }
             
             return poolId;
@@ -238,6 +300,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         private async Task<int> GetPoolIdAsync(string projectName, string machineGroupName)
         {
             int poolId = 0;
+
+            if (_collectionAgentServer == null)
+            {
+                _collectionAgentServer = _agentServer;
+            }
+
             List<TaskAgentQueue> machineGroup = await _collectionAgentServer.GetAgentQueuesAsync(projectName, machineGroupName);
             Trace.Verbose("Returned {0} machineGroup", machineGroup.Count);
 
@@ -252,13 +320,36 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             return poolId;
         }
 
-        private async Task TestConnectAsync(string url, VssCredentials creds)
+        private async Task TestCollectionConnectionAsync(string url, VssCredentials creds)
         {
             _term.WriteLine(StringUtil.Loc("ConnectingToServer"));
             VssConnection connection = ApiUtil.CreateConnection(new Uri(url), creds);
 
             _collectionAgentServer = HostContext.CreateService<IAgentServer>();
             await _collectionAgentServer.ConnectAsync(connection);
+        }
+
+        private async void TestConnectionWithCollection(string tfsUrl, VssCredentials creds)
+        {
+            Trace.Info("Test connection with collection level");
+
+            UriBuilder uriBuilder = new UriBuilder(new Uri(tfsUrl));
+            uriBuilder.Path = uriBuilder.Path + "/" + _collectionName;
+            Trace.Info("Tfs Collection level url to connect - {0}", uriBuilder.Uri.AbsoluteUri);
+
+            // Validate can connect.
+            await TestCollectionConnectionAsync(uriBuilder.Uri.AbsoluteUri, creds);
+            Trace.Info("Connect complete.");
+        }
+
+        private void ThrowExceptionForOnPremUrl()
+        {
+            throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
+        }
+
+        private void ThrowExceptionForVSTSUrl()
+        {
+            throw new Exception(StringUtil.Loc("UrlValidationFailedForVSTSAccount"));
         }
 
     }
