@@ -54,8 +54,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 Tracing trace = tc.GetTrace();
 
                 trace.Info("Creating Deployment Config Provide");
-                IConfigurationProvider deploymenProvider = new DeploymentAgentConfiguration();
-                deploymenProvider.Initialize(tc);
+                IConfigurationProvider machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+                machineGroupAgentConfigProvider.Initialize(tc);
 
 
                 trace.Info("Preparing command line arguments");
@@ -81,14 +81,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                         expectedMachineGroup = queue;
                     }).Returns(Task.FromResult(expectedQueues));
 
-                string baseUrl = deploymenProvider.GetServerUrl(command);
+                string baseUrl = machineGroupAgentConfigProvider.GetServerUrl(command);
                 trace.Info("Verify base url");
                 Assert.True(expectedBaseUrl.Equals(baseUrl));
 
                 trace.Info("Init the deployment provider");
-                deploymenProvider.InitConnection(_agentServer.Object);
+                machineGroupAgentConfigProvider.InitConnection(_agentServer.Object);
 
-                int poolId = deploymenProvider.GetPoolId(command).Result;
+                int poolId = machineGroupAgentConfigProvider.GetPoolId(command).Result;
 
                 trace.Info("Verifying poolId returned by deployment provider");
                 Assert.True(poolId.Equals(_expectedPoolId));
@@ -120,11 +120,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                        "--url", vstsUrlWithoutProject
                     });
 
-                IConfigurationProvider deploymenProvider = new DeploymentAgentConfiguration();
-                deploymenProvider.Initialize(tc);
+                IConfigurationProvider machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+                machineGroupAgentConfigProvider.Initialize(tc);
                 try
                 {
-                    deploymenProvider.GetServerUrl(command);
+                    machineGroupAgentConfigProvider.GetServerUrl(command);
                     Assert.True(false,
                         string.Format("Url validation should throw, not project provided with {0}",
                             vstsUrlWithoutProject));
@@ -155,11 +155,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                        "--url", tfsUrlWithoutCollectionAndProject
                     });
 
-                IConfigurationProvider deploymenProvider = new DeploymentAgentConfiguration();
-                deploymenProvider.Initialize(tc);
+                IConfigurationProvider machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+                machineGroupAgentConfigProvider.Initialize(tc);
                 try
                 {
-                    deploymenProvider.GetServerUrl(command);
+                    machineGroupAgentConfigProvider.GetServerUrl(command);
                     Assert.True(false,
                         string.Format("Url validation should throw, not project provided with {0}",
                             tfsUrlWithoutCollectionAndProject));

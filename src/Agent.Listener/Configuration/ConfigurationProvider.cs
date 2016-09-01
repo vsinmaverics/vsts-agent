@@ -73,7 +73,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         }
     }
 
-    public sealed class AutomationAgentConfiguration : ConfigurationProvider, IConfigurationProvider
+    public sealed class BuildReleasesAgentConfigProvider : ConfigurationProvider, IConfigurationProvider
     {
         public string ConfigurationProviderType
             => Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
@@ -157,7 +157,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
     }
 
-    public sealed class DeploymentAgentConfiguration : ConfigurationProvider, IConfigurationProvider
+    public sealed class MachineGroupAgentConfigProvider : ConfigurationProvider, IConfigurationProvider
     {
         private IAgentServer _collectionAgentServer =null;
         private string _projectName;

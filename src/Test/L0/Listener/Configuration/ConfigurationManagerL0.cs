@@ -23,7 +23,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         private Mock<IServiceControlManager> _serviceControlManager;
         private Mock<IRSAKeyManager> _rsaKeyManager;
         private ICapabilitiesManager _capabilitiesManager;
-        private DeploymentAgentConfiguration _deploymentAgentConfiguration;
+        private MachineGroupAgentConfigProvider _machineGroupAgentConfigProvider;
         private string _expectedToken = "expectedToken";
         private string _expectedServerUrl = "https://localhost";
         private string _expectedVSTSServerUrl = "https://L0ConfigTest.visualstudio.com";
@@ -221,13 +221,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         // Init the Agent Config Provider
         private List<IConfigurationProvider> GetConfigurationProviderList(TestHostContext tc)
         {
-            IConfigurationProvider automationAgent = new AutomationAgentConfiguration();
-            automationAgent.Initialize(tc);
+            IConfigurationProvider buildReleasesAgentConfigProvider = new BuildReleasesAgentConfigProvider();
+            buildReleasesAgentConfigProvider.Initialize(tc);
 
-            _deploymentAgentConfiguration = new DeploymentAgentConfiguration();
-            _deploymentAgentConfiguration.Initialize(tc);
+            _machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+            _machineGroupAgentConfigProvider.Initialize(tc);
 
-            return new List<IConfigurationProvider> { automationAgent, _deploymentAgentConfiguration };
+            return new List<IConfigurationProvider> { buildReleasesAgentConfigProvider, _machineGroupAgentConfigProvider };
         }
         // TODO Unit Test for IsConfigured - Rename config file and make sure it returns false
 
