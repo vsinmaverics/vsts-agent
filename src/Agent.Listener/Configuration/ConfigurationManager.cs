@@ -120,6 +120,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             var extensionManager = HostContext.GetService<IExtensionManager>();
             IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
 
+            ArgUtil.NotNull(agentProvider, agentType);
+
             // TODO: Check if its running with elevated permission and stop early if its not
 
             // Loop getting url and creds until you can connect
@@ -405,7 +407,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                     await agentSvr.ConnectAsync(conn);
                     Trace.Info("Connect complete.");
 
-                    Trace.Info("Agent configured as deploymentAgent : {0}", settings.MachineGroup.ToString());
+                    Trace.Info("Agent configured for machineGroup : {0}", settings.MachineGroup.ToString());
 
                     string agentType = settings.MachineGroup
                    ? Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration
@@ -413,7 +415,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
                     var extensionManager = HostContext.GetService<IExtensionManager>();
                     IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
-                    agentProvider.InitConnection(agentSvr);
+                    agentProvider.InitializeServerConnection();
 
                     List<TaskAgent> agents = await agentSvr.GetAgentsAsync(settings.PoolId, settings.AgentName);
                     if (agents.Count == 0)

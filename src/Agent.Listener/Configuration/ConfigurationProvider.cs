@@ -10,9 +10,9 @@ using Microsoft.VisualStudio.Services.WebApi;
 
 namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 {
-    public interface IConfigurationProvider : IExtension
+    public interface IConfigurationProvider : IExtension, IAgentService
     {
-        void InitConnection(IAgentServer agentServer);
+        void InitializeServerConnection();
 
         string ConfigurationProviderType { get; }
 
@@ -43,9 +43,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             _term = hostContext.GetService<ITerminal>();
         }
 
-        protected void InitializeServerConnection(IAgentServer agentServer)
+        public virtual void InitializeServerConnection()
         {
-            _agentServer = agentServer;
+            _agentServer = HostContext.GetService<IAgentServer>();
         }
         
         protected Task<TaskAgent> UpdateAgent(int poolId, TaskAgent agent)
@@ -78,11 +78,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         public string ConfigurationProviderType
             => Constants.Agent.AgentConfigurationProvider.BuildReleasesAgentConfiguration;
 
-        public void InitConnection(IAgentServer agentServer)
-        {
-            InitializeServerConnection(agentServer);
-        }
-
         public void UpdateAgentSetting(AgentSettings settings)
         {
             // No implementation required
@@ -103,19 +98,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 try
                 {
                     poolId = await GetPoolIdAsync(poolName);
+                    Trace.Info($"PoolId for agent pool '{poolName}' is '{poolId}'.");
+                    break;
                 }
                 catch (Exception e) when (!command.Unattended)
                 {
                     _term.WriteError(e);
+                    _term.WriteError(StringUtil.Loc("FailedToFindPool"));
                 }
-
-                if (poolId > 0)
-                {
-                    break;
-                }
-
-                _term.WriteError(StringUtil.Loc("FailedToFindPool"));
             }
+
             return poolId;            
         }
 
@@ -168,11 +160,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         public string ConfigurationProviderType
             => Constants.Agent.AgentConfigurationProvider.DeploymentAgentConfiguration;
-
-        public void InitConnection(IAgentServer agentServer)
-        {
-            InitializeServerConnection(agentServer);
-        }
 
         public string GetServerUrl(CommandSettings command)
         {
@@ -312,9 +299,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             if (machineGroup.Count == 1)
             {
                 int queueId = machineGroup[0].Id;
-                Trace.Info("Found queue {0} with id {1}", machineGroupName, queueId);
+                Trace.Info("Found machine group {0} with id {1}", machineGroupName, queueId);
                 poolId = machineGroup[0].Pool.Id;
-                Trace.Info("Found poolId {0} with queueName {1}", poolId, machineGroupName);
+                Trace.Info("Found poolId {0} for machine group {1}", poolId, machineGroupName);
             }
 
             return poolId;

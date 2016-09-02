@@ -55,7 +55,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 
                 trace.Info("Creating Deployment Config Provide");
                 IConfigurationProvider machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+
+                trace.Info("Init the deployment provider");
                 machineGroupAgentConfigProvider.Initialize(tc);
+                machineGroupAgentConfigProvider.InitializeServerConnection();
 
 
                 trace.Info("Preparing command line arguments");
@@ -84,9 +87,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 string baseUrl = machineGroupAgentConfigProvider.GetServerUrl(command);
                 trace.Info("Verify base url");
                 Assert.True(expectedBaseUrl.Equals(baseUrl));
-
-                trace.Info("Init the deployment provider");
-                machineGroupAgentConfigProvider.InitConnection(_agentServer.Object);
 
                 int poolId = machineGroupAgentConfigProvider.GetPoolId(command).Result;
 
