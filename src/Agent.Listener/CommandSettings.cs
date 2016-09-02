@@ -23,6 +23,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
         public bool NoStart => TestFlag(Constants.Agent.CommandLine.Flags.NoStart);
         public bool Unattended => TestFlag(Constants.Agent.CommandLine.Flags.Unattended);
         public bool Version => TestFlag(Constants.Agent.CommandLine.Flags.Version);
+        public bool MachineGroup => TestFlag(Constants.Agent.CommandLine.Flags.MachineGroup);
 
         // Constructor.
         public CommandSettings(IHostContext context, string[] args)
@@ -114,13 +115,33 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetUrl()
+        public string GetUrl(bool isMachineGroup = false)
         {
+            string urlDescription = isMachineGroup ? StringUtil.Loc("ServerUrlForMachineGroupAgent") : StringUtil.Loc("ServerUrl");
+
             return GetArgOrPrompt(
                 name: Constants.Agent.CommandLine.Args.Url,
-                description: StringUtil.Loc("ServerUrl"),
+                description: urlDescription,
                 defaultValue: string.Empty,
                 validator: Validators.ServerUrlValidator);
+        }
+
+        public string GetMachineGroupName()
+        {
+            return GetArgOrPrompt(
+                name: Constants.Agent.CommandLine.Args.MachineGroupName,
+                description: StringUtil.Loc("MachineGroupName"),
+                defaultValue: string.Empty,
+                validator: Validators.NonEmptyValidator);
+        }
+
+        public string GetProjectName(string defaultValue)
+        {
+            return GetArgOrPrompt(
+                name: Constants.Agent.CommandLine.Args.ProjectName,
+                description: StringUtil.Loc("ProjectName"),
+                defaultValue: defaultValue,
+                validator: Validators.NonEmptyValidator);
         }
 
         public string GetUserName()

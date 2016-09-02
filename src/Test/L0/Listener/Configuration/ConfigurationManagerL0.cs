@@ -2,7 +2,6 @@ using Microsoft.TeamFoundation.DistributedTask.WebApi;
 using Microsoft.VisualStudio.Services.Agent.Listener;
 using Moq;
 using System;
-using System.IO;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -10,7 +9,6 @@ using Microsoft.VisualStudio.Services.Agent.Listener.Capabilities;
 using Xunit;
 using Microsoft.VisualStudio.Services.Agent.Listener.Configuration;
 using Microsoft.VisualStudio.Services.WebApi;
-using Microsoft.VisualStudio.Services.Agent.Util;
 using System.Security.Cryptography;
 
 namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
@@ -25,16 +23,19 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         private Mock<IServiceControlManager> _serviceControlManager;
         private Mock<IRSAKeyManager> _rsaKeyManager;
         private ICapabilitiesManager _capabilitiesManager;
+        private MachineGroupAgentConfigProvider _machineGroupAgentConfigProvider;
         private string _expectedToken = "expectedToken";
         private string _expectedServerUrl = "https://localhost";
+        private string _expectedVSTSServerUrl = "https://L0ConfigTest.visualstudio.com";
         private string _expectedAgentName = "expectedAgentName";
         private string _expectedPoolName = "poolName";
+        private string _expectedProjectName = "testProjectName";
+        private string _expectedMachineGroupName = "testMachineGroupName";
         private string _expectedAuthType = "pat";
         private string _expectedWorkFolder = "_work";
         private int _expectedPoolId = 1;
         private RSA rsa = null;
         private AgentSettings _configMgrAgentSettings = new AgentSettings();
-
 
         public ConfigurationManagerL0()
         {
@@ -45,7 +46,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
             _extnMgr = new Mock<IExtensionManager>();
             _serviceControlManager = new Mock<IServiceControlManager>();
             _rsaKeyManager = new Mock<IRSAKeyManager>();
-
 
 #if !OS_WINDOWS
             string eulaFile = Path.Combine(IOUtil.GetExternalsPath(), Constants.Path.TeeDirectory, "license.html");
@@ -60,12 +60,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 
             _store.Setup(x => x.IsConfigured()).Returns(false);
             _store.Setup(x => x.HasCredentials()).Returns(false);
-
             _store.Setup(x => x.GetSettings()).Returns(
                 () => _configMgrAgentSettings
                 );
 
-            _store.Setup(x => x.SaveSettings(It.IsAny<AgentSettings>())).Callback((AgentSettings settings) =>
+           _store.Setup(x => x.SaveSettings(It.IsAny<AgentSettings>())).Callback((AgentSettings settings) =>
             {
                 _configMgrAgentSettings = settings;
             });
@@ -112,6 +111,61 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         [Trait("Category", "ConfigurationManagement")]
         public async Task CanEnsureConfigure()
         {
+           using (TestHostContext tc = CreateTestContext())
+           {
+               Tracing trace = tc.GetTrace();
+
+               trace.Info("Creating config manager");
+               IConfigurationManager configManager = new ConfigurationManager();
+               configManager.Initialize(tc);
+
+               trace.Info("Preparing command line arguments");
+               var command = new CommandSettings(
+                   tc,
+                   new[]
+                   {
+                       "configure",
+#if !OS_WINDOWS
+                       "--acceptteeeula",
+#endif
+                       "--url", _expectedServerUrl,
+                       "--agent", _expectedAgentName,
+                       "--pool", _expectedPoolName,
+                       "--work", _expectedWorkFolder,
+                       "--auth", _expectedAuthType,
+                       "--token", _expectedToken
+                   });
+               trace.Info("Constructed.");
+               _store.Setup(x => x.IsConfigured()).Returns(false);
+               _configMgrAgentSettings = null;
+
+                _extnMgr.Setup(x => x.GetExtensions<IConfigurationProvider>()).Returns(GetConfigurationProviderList(tc));
+
+               trace.Info("Ensuring all the required parameters are available in the command line parameter");
+               await configManager.ConfigureAsync(command);
+
+               _store.Setup(x => x.IsConfigured()).Returns(true);
+
+               trace.Info("Configured, verifying all the parameter value");
+               var s = configManager.LoadSettings();
+               Assert.NotNull(s);
+               Assert.True(s.ServerUrl.Equals(_expectedServerUrl));
+               Assert.True(s.AgentName.Equals(_expectedAgentName));
+               Assert.True(s.PoolId.Equals(_expectedPoolId));
+               Assert.True(s.WorkFolder.Equals(_expectedWorkFolder));
+           }
+       }
+
+
+       /*
+        * Agent configuartion as deployment agent against VSTS account
+        * Collectioion name is not required
+        */
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "ConfigurationManagement")]
+        public async Task CanEnsureMachineGroupAgentConfigureVSTSScenario()
+        {
             using (TestHostContext tc = CreateTestContext())
             {
                 Tracing trace = tc.GetTrace();
@@ -120,26 +174,34 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 IConfigurationManager configManager = new ConfigurationManager();
                 configManager.Initialize(tc);
 
-                trace.Info("Preparing command line arguments");
+                string url = _expectedVSTSServerUrl + "/" + _expectedProjectName;
+                trace.Info("Preparing command line arguments for vsts scenario");
                 var command = new CommandSettings(
                     tc,
                     new[]
                     {
-                       "configure",
+                        "configure",
 #if !OS_WINDOWS
-                       "--acceptteeeula", 
-#endif                       
-                       "--url", _expectedServerUrl,
-                       "--agent", _expectedAgentName,
-                       "--pool", _expectedPoolName,
-                       "--work", _expectedWorkFolder,
-                       "--auth", _expectedAuthType,
-                       "--token", _expectedToken
+                       "--acceptteeeula",
+#endif
+                        "--machinegroup",
+                        "--url", url,
+                        "--agent", _expectedAgentName,
+                        "--machinegroupname", _expectedMachineGroupName,
+                        "--work", _expectedWorkFolder,
+                        "--auth", _expectedAuthType,
+                        "--token", _expectedToken
                     });
                 trace.Info("Constructed.");
+
                 _store.Setup(x => x.IsConfigured()).Returns(false);
                 _configMgrAgentSettings = null;
 
+                _extnMgr.Setup(x => x.GetExtensions<IConfigurationProvider>()).Returns(GetConfigurationProviderList(tc));
+
+                var expectedQueues = new List<TaskAgentQueue>() { new TaskAgentQueue() { Id = 2 , Pool = new TaskAgentPoolReference(new Guid(), 3) } };
+                _agentServer.Setup(x => x.GetAgentQueuesAsync(It.IsAny<string>(),It.IsAny<string>())).Returns(Task.FromResult(expectedQueues));
+                
                 trace.Info("Ensuring all the required parameters are available in the command line parameter");
                 await configManager.ConfigureAsync(command);
 
@@ -148,13 +210,25 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 trace.Info("Configured, verifying all the parameter value");
                 var s = configManager.LoadSettings();
                 Assert.NotNull(s);
-                Assert.True(s.ServerUrl.Equals(_expectedServerUrl));
+                Assert.True(s.ServerUrl.Equals(_expectedVSTSServerUrl,StringComparison.CurrentCultureIgnoreCase));
                 Assert.True(s.AgentName.Equals(_expectedAgentName));
-                Assert.True(s.PoolId.Equals(_expectedPoolId));
+                Assert.True(s.PoolId.Equals(3));
                 Assert.True(s.WorkFolder.Equals(_expectedWorkFolder));
+                Assert.True(s.MachineGroupName.Equals(_expectedMachineGroupName));
             }
         }
+        
+        // Init the Agent Config Provider
+        private List<IConfigurationProvider> GetConfigurationProviderList(TestHostContext tc)
+        {
+            IConfigurationProvider buildReleasesAgentConfigProvider = new BuildReleasesAgentConfigProvider();
+            buildReleasesAgentConfigProvider.Initialize(tc);
 
+            _machineGroupAgentConfigProvider = new MachineGroupAgentConfigProvider();
+            _machineGroupAgentConfigProvider.Initialize(tc);
+
+            return new List<IConfigurationProvider> { buildReleasesAgentConfigProvider, _machineGroupAgentConfigProvider };
+        }
         // TODO Unit Test for IsConfigured - Rename config file and make sure it returns false
 
     }
