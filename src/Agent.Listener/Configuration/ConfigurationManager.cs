@@ -20,7 +20,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
     {
         bool IsConfigured();
         bool IsServiceConfigured();
-        Task EnsureConfiguredAsync(CommandSettings command);
         Task ConfigureAsync(CommandSettings command);
         Task UnconfigureAsync(CommandSettings command);
         AgentSettings LoadSettings();
@@ -53,15 +52,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             bool result = _store.IsConfigured();
             Trace.Info($"Is configured: {result}");
             return result;
-        }
-
-        public async Task EnsureConfiguredAsync(CommandSettings command)
-        {
-            Trace.Info(nameof(EnsureConfiguredAsync));
-            if (!IsConfigured())
-            {
-                await ConfigureAsync(command);
-            }
         }
 
         public AgentSettings LoadSettings()
@@ -149,7 +139,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 {
                     _term.WriteError(e);
                     _term.WriteError(StringUtil.Loc("FailedToConnect"));
-                    // TODO: If the connection fails, shouldn't the URL/creds be cleared from the command line parser? Otherwise retry may be immediately attempted using the same values without prompting the user for new values. The same general problem applies to every retry loop during configure.
                 }
             }
 
@@ -161,7 +150,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 publicKey = rsa.ExportParameters(false);
             }
 
-            // Loop getting agent name and pool
+            // Loop getting agent name and pool name
             string poolName = null;
             int poolId = 0;
             string agentName = null;
@@ -186,18 +175,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 {
                     if (command.GetReplace())
                     {
-                        agent.Authorization = new TaskAgentAuthorization
-                        {
-                            PublicKey = new TaskAgentPublicKey(publicKey.Exponent, publicKey.Modulus),
-                        };
-
-                        // update - update instead of delete so we don't lose user capabilities etc...
-                        agent.Version = Constants.Agent.Version;
-
-                        foreach (KeyValuePair<string, string> capability in systemCapabilities)
-                        {
-                            agent.SystemCapabilities[capability.Key] = capability.Value ?? string.Empty;
-                        }
+                        // Update existing agent with new PublicKey, agent version and SystemCapabilities.
+                        agent = UpdateExistingAgent(agent, publicKey, systemCapabilities);
 
                         try
                         {
@@ -211,27 +190,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                             _term.WriteError(StringUtil.Loc("FailedToReplaceAgent"));
                         }
                     }
-                    else
+                    else if (command.Unattended)
                     {
-                        // TODO: ?
+                        // if not replace and it is unattended config.
+                        throw new TaskAgentExistsException(StringUtil.Loc("AgentWithSameNameAlreadyExistInPool", poolId, agentName));
                     }
                 }
                 else
                 {
-                    agent = new TaskAgent(agentName)
-                    {
-                        Authorization = new TaskAgentAuthorization
-                        {
-                            PublicKey = new TaskAgentPublicKey(publicKey.Exponent, publicKey.Modulus),
-                        },
-                        MaxParallelism = 1,
-                        Version = Constants.Agent.Version
-                    };
-
-                    foreach (KeyValuePair<string, string> capability in systemCapabilities)
-                    {
-                        agent.SystemCapabilities[capability.Key] = capability.Value ?? string.Empty;
-                    }
+                    // Create a new agent. 
+                    agent = CreateNewAgent(agentName, publicKey, systemCapabilities);
 
                     try
                     {
@@ -256,15 +224,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 Trace.Info($"Agent server url resolve by server: '{agentServerUrl}'.");
 
                 // we need make sure the Host component of the url remain the same.
-                Uri inputServerUrl = new Uri(serverUrl);
-                Uri serverReturnedServerUrl = new Uri(agentServerUrl);
-                if (Uri.Compare(inputServerUrl, serverReturnedServerUrl, UriComponents.Host, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
+                UriBuilder inputServerUrl = new UriBuilder(serverUrl);
+                UriBuilder serverReturnedServerUrl = new UriBuilder(agentServerUrl);
+                if (Uri.Compare(inputServerUrl.Uri, serverReturnedServerUrl.Uri, UriComponents.Host, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
                 {
-                    UriBuilder replaceHostUrl = new UriBuilder(serverReturnedServerUrl);
-                    replaceHostUrl.Host = inputServerUrl.Host;
-
-                    Trace.Info($"Replace server returned url's host component with user input server url's host: '{replaceHostUrl.Uri.AbsoluteUri}'.");
-                    serverUrl = replaceHostUrl.Uri.AbsoluteUri;
+                    inputServerUrl.Path = serverReturnedServerUrl.Path;
+                    Trace.Info($"Replace server returned url's host component with user input server url's host: '{inputServerUrl.Uri.AbsoluteUri}'.");
+                    serverUrl = inputServerUrl.Uri.AbsoluteUri;
                 }
                 else
                 {
@@ -318,6 +284,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
             // We will Combine() what's stored with root.  Defaults to string a relative path
             string workFolder = command.GetWork();
+
+            // notificationPipeName for Hosted agent provisioner.
             string notificationPipeName = command.GetNotificationPipeName();
 
             // Get Agent settings
@@ -340,36 +308,30 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             _store.SaveSettings(settings);
             _term.WriteLine(StringUtil.Loc("SavedSettings", DateTime.UtcNow));
 
-            bool runAsService = false;
-
-            if (Constants.Agent.Platform == Constants.OSPlatform.Windows)
+#if OS_WINDOWS
+            // config windows service as part of configuration
+            bool runAsService = command.GetRunAsService();
+            if (!runAsService)
             {
-                runAsService = command.GetRunAsService();
-                if (runAsService)
+                return;
+            }
+            else
+            {
+                if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
                 {
-                    if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
-                    {
-                        Trace.Error("Needs Administrator privileges for configure agent as windows service.");
-                        throw new SecurityException(StringUtil.Loc("NeedAdminForConfigAgentWinService"));
-                    }
+                    Trace.Error("Needs Administrator privileges for configure agent as windows service.");
+                    throw new SecurityException(StringUtil.Loc("NeedAdminForConfigAgentWinService"));
                 }
-            }
 
-            var serviceControlManager = HostContext.GetService<IServiceControlManager>();
-            serviceControlManager.GenerateScripts(settings);
-
-            bool successfullyConfigured = false;
-            if (runAsService)
-            {
                 Trace.Info("Configuring to run the agent as service");
-                successfullyConfigured = serviceControlManager.ConfigureService(settings, command);
+                var serviceControlManager = HostContext.GetService<IWindowsServiceControlManager>();
+                serviceControlManager.ConfigureService(settings, command);
             }
-
-            if (runAsService && successfullyConfigured)
-            {
-                Trace.Info("Configuration was successful, trying to start the service");
-                serviceControlManager.StartService();
-            }
+#elif OS_LINUX || OS_OSX
+            // generate service config script for OSX and Linux, GenerateScripts() will no-opt on windows.
+            var serviceControlManager = HostContext.GetService<ILinuxServiceControlManager>();
+            serviceControlManager.GenerateScripts(settings);
+#endif
         }
 
         public async Task UnconfigureAsync(CommandSettings command)
@@ -381,9 +343,23 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 _term.WriteLine(currentAction);
                 if (_store.IsServiceConfigured())
                 {
-                    var serviceControlManager = HostContext.GetService<IServiceControlManager>();
+#if OS_WINDOWS
+                    if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
+                    {
+                        Trace.Error("Needs Administrator privileges for unconfigure windows service agent.");
+                        throw new SecurityException(StringUtil.Loc("NeedAdminForUnconfigWinServiceAgent"));
+                    }
+
+                    var serviceControlManager = HostContext.GetService<IWindowsServiceControlManager>();
                     serviceControlManager.UnconfigureService();
                     _term.WriteLine(StringUtil.Loc("Success") + currentAction);
+#elif OS_LINUX
+                    // unconfig system D service first
+                    throw new Exception(StringUtil.Loc("UnconfigureServiceDService"));
+#elif OS_OSX
+                    // unconfig osx service first
+                    throw new Exception(StringUtil.Loc("UnconfigureOSXService"));
+#endif
                 }
 
                 //delete agent from the server
@@ -500,6 +476,45 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             List<TaskAgent> agents = await _agentServer.GetAgentsAsync(poolId, name);
             Trace.Verbose("Returns {0} agents", agents.Count);
             TaskAgent agent = agents.FirstOrDefault();
+
+            return agent;
+        }
+
+        private TaskAgent UpdateExistingAgent(TaskAgent agent, RSAParameters publicKey, Dictionary<string, string> systemCapabilities)
+        {
+            ArgUtil.NotNull(agent, nameof(agent));
+            agent.Authorization = new TaskAgentAuthorization
+            {
+                PublicKey = new TaskAgentPublicKey(publicKey.Exponent, publicKey.Modulus),
+            };
+
+            // update - update instead of delete so we don't lose user capabilities etc...
+            agent.Version = Constants.Agent.Version;
+
+            foreach (KeyValuePair<string, string> capability in systemCapabilities)
+            {
+                agent.SystemCapabilities[capability.Key] = capability.Value ?? string.Empty;
+            }
+
+            return agent;
+        }
+
+        private TaskAgent CreateNewAgent(string agentName, RSAParameters publicKey, Dictionary<string, string> systemCapabilities)
+        {
+            TaskAgent agent = new TaskAgent(agentName)
+            {
+                Authorization = new TaskAgentAuthorization
+                {
+                    PublicKey = new TaskAgentPublicKey(publicKey.Exponent, publicKey.Modulus),
+                },
+                MaxParallelism = 1,
+                Version = Constants.Agent.Version
+            };
+
+            foreach (KeyValuePair<string, string> capability in systemCapabilities)
+            {
+                agent.SystemCapabilities[capability.Key] = capability.Value ?? string.Empty;
+            }
 
             return agent;
         }

@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.Services.Agent.Util;
 using System;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace Microsoft.VisualStudio.Services.Agent.Listener
 {
@@ -12,6 +13,39 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
         private readonly IPromptManager _promptManager;
         private readonly Tracing _trace;
 
+        private readonly string[] validCommands =
+        {
+            Constants.Agent.CommandLine.Commands.Configure,
+            Constants.Agent.CommandLine.Commands.Run,
+            Constants.Agent.CommandLine.Commands.Unconfigure
+        };
+
+        private readonly string[] validFlags =
+        {
+            Constants.Agent.CommandLine.Flags.AcceptTeeEula,
+            Constants.Agent.CommandLine.Flags.Commit,
+            Constants.Agent.CommandLine.Flags.Help,
+            Constants.Agent.CommandLine.Flags.Replace,
+            Constants.Agent.CommandLine.Flags.RunAsService,
+            Constants.Agent.CommandLine.Flags.Unattended,
+            Constants.Agent.CommandLine.Flags.Version
+        };
+
+        private readonly string[] validArgs =
+        {
+            Constants.Agent.CommandLine.Args.Agent,
+            Constants.Agent.CommandLine.Args.Auth,
+            Constants.Agent.CommandLine.Args.NotificationPipeName,
+            Constants.Agent.CommandLine.Args.Password,
+            Constants.Agent.CommandLine.Args.Pool,
+            Constants.Agent.CommandLine.Args.Token,
+            Constants.Agent.CommandLine.Args.Url,
+            Constants.Agent.CommandLine.Args.UserName,
+            Constants.Agent.CommandLine.Args.WindowsLogonAccount,
+            Constants.Agent.CommandLine.Args.WindowsLogonPassword,
+            Constants.Agent.CommandLine.Args.Work
+        };
+
         // Commands.
         public bool Configure => TestCommand(Constants.Agent.CommandLine.Commands.Configure);
         public bool Run => TestCommand(Constants.Agent.CommandLine.Commands.Run);
@@ -20,7 +54,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
         // Flags.
         public bool Commit => TestFlag(Constants.Agent.CommandLine.Flags.Commit);
         public bool Help => TestFlag(Constants.Agent.CommandLine.Flags.Help);
-        public bool NoStart => TestFlag(Constants.Agent.CommandLine.Flags.NoStart);
         public bool Unattended => TestFlag(Constants.Agent.CommandLine.Flags.Unattended);
         public bool Version => TestFlag(Constants.Agent.CommandLine.Flags.Version);
         public bool MachineGroup => TestFlag(Constants.Agent.CommandLine.Flags.MachineGroup);
@@ -38,6 +71,23 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 hostContext: context,
                 secretArgNames: Constants.Agent.CommandLine.Args.Secrets);
             _parser.Parse(args);
+        }
+
+        // Validate commandline parser result
+        public List<string> Validate()
+        {
+            List<string> unknowns = new List<string>();
+
+            // detect unknown commands
+            unknowns.AddRange(_parser.Commands.Where(x => !validCommands.Contains(x)));
+
+            // detect unknown flags
+            unknowns.AddRange(_parser.Flags.Where(x => !validFlags.Contains(x)));
+
+            // detect unknown args
+            unknowns.AddRange(_parser.Args.Keys.Where(x => !validArgs.Contains(x)));
+
+            return unknowns;
         }
 
         //
@@ -199,6 +249,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             return result;
         }
 
+
+        private void RemoveArg(string name)
+        {
+            if (_parser.Args.ContainsKey(name))
+            {
+                _parser.Args.Remove(name);
+            }
+        }
+
         private string GetArgOrPrompt(
             string name,
             string description,
@@ -213,6 +272,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             _trace.Info($"Arg '{name}': '{result}'");
             if (!string.IsNullOrEmpty(result))
             {
+                // After read the arg from input commandline args, remove it from Arg dictionary,
+                // This will help if bad arg value passed through CommandLine arg, when ConfigurationManager ask CommandSetting the second time, 
+                // It will prompt for input intead of continue use the bad input.
+                _trace.Info($"Remove {name} from Arg dictionary.");
+                RemoveArg(name);
+
                 if (validator(result))
                 {
                     return result;

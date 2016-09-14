@@ -10,7 +10,10 @@ using Xunit;
 using Microsoft.VisualStudio.Services.Agent.Listener.Configuration;
 using Microsoft.VisualStudio.Services.WebApi;
 using System.Security.Cryptography;
-
+#if !OS_WINDOWS
+using Microsoft.VisualStudio.Services.Agent.Util;
+using System.IO;
+#endif
 namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 {
     public class ConfigurationManagerL0
@@ -20,7 +23,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         private Mock<IPromptManager> _promptManager;
         private Mock<IConfigurationStore> _store;
         private Mock<IExtensionManager> _extnMgr;
-        private Mock<IServiceControlManager> _serviceControlManager;
+
+#if OS_WINDOWS
+        private Mock<IWindowsServiceControlManager> _serviceControlManager;
+#endif
+
+#if !OS_WINDOWS
+        private Mock<ILinuxServiceControlManager> _serviceControlManager;
+#endif
+
         private Mock<IRSAKeyManager> _rsaKeyManager;
         private ICapabilitiesManager _capabilitiesManager;
         private MachineGroupAgentConfigProvider _machineGroupAgentConfigProvider;
@@ -44,8 +55,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
             _promptManager = new Mock<IPromptManager>();
             _store = new Mock<IConfigurationStore>();
             _extnMgr = new Mock<IExtensionManager>();
-            _serviceControlManager = new Mock<IServiceControlManager>();
             _rsaKeyManager = new Mock<IRSAKeyManager>();
+
+#if OS_WINDOWS
+            _serviceControlManager = new Mock<IWindowsServiceControlManager>();
+#endif
+
+#if !OS_WINDOWS
+            _serviceControlManager = new Mock<ILinuxServiceControlManager>();
+#endif
 
 #if !OS_WINDOWS
             string eulaFile = Path.Combine(IOUtil.GetExternalsPath(), Constants.Path.TeeDirectory, "license.html");
@@ -71,7 +89,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
 
             _credMgr.Setup(x => x.GetCredentialProvider(It.IsAny<string>())).Returns(new TestAgentCredential());
 
+#if !OS_WINDOWS
             _serviceControlManager.Setup(x => x.GenerateScripts(It.IsAny<AgentSettings>()));
+#endif
 
             var expectedPools = new List<TaskAgentPool>() { new TaskAgentPool(_expectedPoolName) { Id = _expectedPoolId } };
             _agentServer.Setup(x => x.GetAgentPoolsAsync(It.IsAny<string>())).Returns(Task.FromResult(expectedPools));
@@ -98,7 +118,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
             tc.SetSingleton<IExtensionManager>(_extnMgr.Object);
             tc.SetSingleton<IAgentServer>(_agentServer.Object);
             tc.SetSingleton<ICapabilitiesManager>(_capabilitiesManager);
-            tc.SetSingleton<IServiceControlManager>(_serviceControlManager.Object);
+
+#if OS_WINDOWS
+            tc.SetSingleton<IWindowsServiceControlManager>(_serviceControlManager.Object);
+#endif
+
+#if !OS_WINDOWS
+            tc.SetSingleton<ILinuxServiceControlManager>(_serviceControlManager.Object);
+#endif
 
             tc.SetSingleton<IRSAKeyManager>(_rsaKeyManager.Object);
             tc.EnqueueInstance<IAgentServer>(_agentServer.Object);
@@ -111,40 +138,40 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         [Trait("Category", "ConfigurationManagement")]
         public async Task CanEnsureConfigure()
         {
-           using (TestHostContext tc = CreateTestContext())
-           {
-               Tracing trace = tc.GetTrace();
+            using (TestHostContext tc = CreateTestContext())
+            {
+                Tracing trace = tc.GetTrace();
 
-               trace.Info("Creating config manager");
-               IConfigurationManager configManager = new ConfigurationManager();
-               configManager.Initialize(tc);
+                trace.Info("Creating config manager");
+                IConfigurationManager configManager = new ConfigurationManager();
+                configManager.Initialize(tc);
 
-               trace.Info("Preparing command line arguments");
-               var command = new CommandSettings(
-                   tc,
-                   new[]
-                   {
+                trace.Info("Preparing command line arguments");
+                var command = new CommandSettings(
+                    tc,
+                    new[]
+                    {
                        "configure",
 #if !OS_WINDOWS
-                       "--acceptteeeula",
-#endif
+                       "--acceptteeeula", 
+#endif                       
                        "--url", _expectedServerUrl,
                        "--agent", _expectedAgentName,
                        "--pool", _expectedPoolName,
                        "--work", _expectedWorkFolder,
                        "--auth", _expectedAuthType,
                        "--token", _expectedToken
-                   });
-               trace.Info("Constructed.");
-               _store.Setup(x => x.IsConfigured()).Returns(false);
-               _configMgrAgentSettings = null;
+                    });
+                trace.Info("Constructed.");
+                _store.Setup(x => x.IsConfigured()).Returns(false);
+                _configMgrAgentSettings = null;
 
                 _extnMgr.Setup(x => x.GetExtensions<IConfigurationProvider>()).Returns(GetConfigurationProviderList(tc));
 
-               trace.Info("Ensuring all the required parameters are available in the command line parameter");
-               await configManager.ConfigureAsync(command);
+                trace.Info("Ensuring all the required parameters are available in the command line parameter");
+                await configManager.ConfigureAsync(command);
 
-               _store.Setup(x => x.IsConfigured()).Returns(true);
+                _store.Setup(x => x.IsConfigured()).Returns(true);
 
                trace.Info("Configured, verifying all the parameter value");
                var s = configManager.LoadSettings();

@@ -38,7 +38,7 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         public static class Agent
         {
-            public static readonly string Version = "2.105.1";
+            public static readonly string Version = "2.106.0";
 
 #if OS_LINUX
             public static readonly OSPlatform Platform = OSPlatform.Linux;
@@ -89,7 +89,6 @@ namespace Microsoft.VisualStudio.Services.Agent
                     public static readonly string AcceptTeeEula = "acceptteeeula";
                     public static readonly string Commit = "commit";
                     public static readonly string Help = "help";
-                    public static readonly string NoStart = "nostart";
                     public static readonly string Replace = "replace";
                     public static readonly string RunAsService = "runasservice";
                     public static readonly string Unattended = "unattended";
@@ -201,6 +200,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 public static readonly string OSVersion = "agent.osversion";
                 public static readonly string RootDirectory = "agent.RootDirectory";
                 public static readonly string ServerOMDirectory = "agent.ServerOMDirectory";
+                public static readonly string Version = "agent.version";
                 public static readonly string WorkFolder = "agent.workfolder";
                 public static readonly string WorkingDirectory = "agent.WorkingDirectory";
             }

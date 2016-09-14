@@ -70,6 +70,23 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     return Constants.Agent.ReturnCode.Success;
                 }
 
+                // Configure agent prompt for args if not supplied
+                // Unattend configure mode will not prompt for args if not supplied and error on any missing or invalid value.
+                if (command.Configure)
+                {
+                    try
+                    {
+                        await configManager.ConfigureAsync(command);
+                        return Constants.Agent.ReturnCode.Success;
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.Error(ex);
+                        _term.WriteError(ex.Message);
+                        return Constants.Agent.ReturnCode.TerminatedError;
+                    }
+                }
+
                 // Unconfigure, remove config files, service and exit
                 if (command.Unconfigure)
                 {
@@ -86,67 +103,44 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     }
                 }
 
-                if (command.Run && !configManager.IsConfigured())
+                _inConfigStage = false;
+
+                AgentSettings settings = configManager.LoadSettings();
+                bool runAsService = configManager.IsServiceConfigured();
+
+                // Run agent
+                //if (command.Run) // this line is current break machine provisioner.
+                //{
+
+                // Error if agent not configured.
+                if (!configManager.IsConfigured())
                 {
                     _term.WriteError(StringUtil.Loc("AgentIsNotConfigured"));
                     PrintUsage();
                     return Constants.Agent.ReturnCode.TerminatedError;
                 }
 
-                // unattend mode will not prompt for args if not supplied.  Instead will error.
-                if (command.Configure)
-                {
-                    try
-                    {
-                        await configManager.ConfigureAsync(command);
-                        return Constants.Agent.ReturnCode.Success;
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.Error(ex);
-                        _term.WriteError(ex.Message);
-                        return Constants.Agent.ReturnCode.TerminatedError;
-                    }
-                }
+                // Run the agent interactively or as service
+                Trace.Verbose($"Run as service: '{runAsService}'");
+                return await RunAsync(TokenSource.Token, settings, runAsService);
 
-                Trace.Info("Done evaluating commands");
-                await configManager.EnsureConfiguredAsync(command);
+                //}
 
-                _inConfigStage = false;
+                // #if OS_WINDOWS
+                //                 // this code is for migrated .net windows agent that running as windows service.
+                //                 // leave the code as is untill we have a real plan for auto-migration.
+                //                 if (runAsService && configManager.IsConfigured() && File.Exists(Path.Combine(IOUtil.GetBinPath(), "VsoAgentService.exe")))
+                //                 {
+                //                     // The old .net windows servicehost doesn't pass correct args while invoke Agent.Listener.exe
+                //                     // When we detect the agent is a migrated .net windows agent, we will just run the agent.listener.exe even the servicehost doesn't pass correct args.
+                //                     Trace.Verbose($"Run the agent for compat reason.");
+                //                     return await RunAsync(TokenSource.Token, settings, runAsService);
+                //                 }
+                // #endif
 
-                if (command.NoStart)
-                {
-                    Trace.Info("No start.");
-                    return Constants.Agent.ReturnCode.Success;
-                }
-
-                AgentSettings settings = configManager.LoadSettings();
-                bool runAsService = configManager.IsServiceConfigured();
-                if (command.Run || !runAsService)
-                {
-                    // Run the agent interactively
-                    Trace.Verbose($"Run as service: '{runAsService}'");
-                    return await RunAsync(TokenSource.Token, settings, runAsService);
-                }
-
-#if OS_WINDOWS
-                if (File.Exists(Path.Combine(IOUtil.GetBinPath(), "VsoAgentService.exe")))
-                {
-                    // The old .net windows servicehost doesn't pass correct args while invoke Agent.Listener.exe
-                    // When we detect the agent is a migrated .net windows agent, we will just run the agent.listener.exe even the servicehost doesn't pass correct args.
-                    Trace.Verbose($"Run the agent for compat reason.");
-                    return await RunAsync(TokenSource.Token, settings, runAsService);
-                }
-#endif
-                if (runAsService)
-                {
-                    // This is helpful if the user tries to start the agent.listener which is already configured or running as service
-                    // However user can execute the agent by calling the run command
-                    // TODO: Should we check if the service is running and prompt user to start the service if its not already running?
-                    _term.WriteLine(StringUtil.Loc("ConfiguredAsRunAsService"));
-                }
-
-                return Constants.Agent.ReturnCode.Success;
+                //                 Trace.Info("Doesn't match any existing command option, print usage.");
+                //                 PrintUsage();
+                //                 return Constants.Agent.ReturnCode.TerminatedError;
             }
             finally
             {
@@ -281,6 +275,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                             var cancelJobMessage = JsonUtility.FromString<JobCancelMessage>(message.Body);
                             bool jobCancelled = jobDispatcher.Cancel(cancelJobMessage);
                             skipMessageDeletion = autoUpdateInProgress && !jobCancelled;
+                        }
+                        else
+                        {
+                            Trace.Error($"Received message {message.MessageId} with unsupported message type {message.MessageType}.");
                         }
                     }
                     finally

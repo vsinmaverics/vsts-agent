@@ -1,7 +1,6 @@
 using Microsoft.VisualStudio.Services.Agent.Util;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -67,8 +66,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Capabilities
                 filePaths: new string[] { "/Applications/Xamarin Studio.app/Contents/MacOS/mdtool" });
             builder.Check(
                 name: "Xamarin.Android",
-                fileName: "mandroid",
-                filePaths: new string[] { "/Library/Frameworks/Xamarin.Android.framework/Commands/mandroid" });
+                fileName: "generator",
+                filePaths: new string[] { "/Library/Frameworks/Xamarin.Android.framework/Commands/generator" });
             await builder.CheckToolOutputAsync(
                 name: "xcode",
                 fileName: "xcode-select",

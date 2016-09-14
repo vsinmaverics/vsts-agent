@@ -110,8 +110,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             string latestAgentDirectory = IOUtil.GetUpdatePath(HostContext);
             IOUtil.DeleteDirectory(latestAgentDirectory, token);
             Directory.CreateDirectory(latestAgentDirectory);
-            string archiveFile = Path.Combine(latestAgentDirectory, $"{new Uri(_latestPackage.DownloadUrl).Segments.Last()}");
 
+            string archiveFile;
+            if (_latestPackage.Platform.StartsWith("win"))
+            {
+                archiveFile = Path.Combine(latestAgentDirectory, "agent.zip");
+            }
+            else
+            {
+                archiveFile = Path.Combine(latestAgentDirectory, "agent.tar.gz");
+            }
+
+            Trace.Info($"Save latest agent into {archiveFile}.");
             try
             {
                 var proxyConfig = HostContext.GetService<IProxyConfiguration>();
@@ -249,7 +259,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             foreach (string existBackUp in Directory.GetDirectories(IOUtil.GetRootPath(), "*.bak.*"))
             {
                 Trace.Info($"Delete existing agent backup at {existBackUp}.");
-                IOUtil.DeleteDirectory(existBackUp, token);
+                try
+                {
+                    IOUtil.DeleteDirectory(existBackUp, token);
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException))
+                {
+                    Trace.Error(ex);
+                    Trace.Info($"Catch exception during delete backup folder {existBackUp}, ignore this error try delete the backup folder on next auto-update.");
+                }
             }
 
             // delete old bin.2.99.0 folder, only leave the current version and the latest download version
@@ -269,7 +287,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     }
 
                     Trace.Info($"Delete agent bin folder's backup at {oldBinDir}.");
-                    IOUtil.DeleteDirectory(oldBinDir, token);
+                    try
+                    {
+                        IOUtil.DeleteDirectory(oldBinDir, token);
+                    }
+                    catch (Exception ex) when (!(ex is OperationCanceledException))
+                    {
+                        Trace.Error(ex);
+                        Trace.Info($"Catch exception during delete backup folder {oldBinDir}, ignore this error try delete the backup folder on next auto-update.");
+                    }
                 }
             }
 
@@ -290,7 +316,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     }
 
                     Trace.Info($"Delete agent externals folder's backup at {oldExternalDir}.");
-                    IOUtil.DeleteDirectory(oldExternalDir, token);
+                    try
+                    {
+                        IOUtil.DeleteDirectory(oldExternalDir, token);
+                    }
+                    catch (Exception ex) when (!(ex is OperationCanceledException))
+                    {
+                        Trace.Error(ex);
+                        Trace.Info($"Catch exception during delete backup folder {oldExternalDir}, ignore this error try delete the backup folder on next auto-update.");
+                    }
                 }
             }
         }

@@ -193,7 +193,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 catch (Exception ex)
                 {
                     // we can't even query for the jobrequest from server, something totally busted, stop agent/worker.
-                    Trace.Error("Catch exception while checking jobrequest status. Cancel running worker right away.");
+                    Trace.Error($"Catch exception while checking jobrequest {jobDispatch.JobId} status. Cancel running worker right away.");
                     Trace.Error(ex);
 
                     jobDispatch.WorkerCancellationTokenSource.Cancel();
@@ -218,14 +218,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     {
                         // at this point, the job exectuion might encounter some dead lock and even not able to be canclled.
                         // no need to localize the exception string should never happen.
-                        throw new InvalidOperationException("Job dispatch process has encountered unexpected error, the dispatch task is not able to be canceled within 45 seconds.");
+                        throw new InvalidOperationException($"Job dispatch process for {jobDispatch.JobId} has encountered unexpected error, the dispatch task is not able to be canceled within 45 seconds.");
                     }
                 }
                 else
                 {
                     // something seriously wrong on server side. stop agent from continue running.
                     // no need to localize the exception string should never happen.
-                    throw new InvalidOperationException("Server send a new job request while the previous job request haven't finished.");
+                    throw new InvalidOperationException($"Server send a new job request while the previous job request {jobDispatch.JobId} haven't finished.");
                 }
             }
 
@@ -273,12 +273,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             using (var lockRenewalTokenSource = new CancellationTokenSource())
             using (var workerProcessCancelTokenSource = new CancellationTokenSource())
             {
-                await notification.JobStarted(message.JobId);
                 long requestId = message.RequestId;
                 Guid lockToken = message.LockToken;
 
                 // start renew job request
-                Trace.Info("Start renew job request.");
+                Trace.Info($"Start renew job request {requestId} for job {message.JobId}.");
                 Task renewJobRequest = RenewJobRequestAsync(_poolId, requestId, lockToken, firstJobRequestRenewed, lockRenewalTokenSource.Token);
 
                 // wait till first renew succeed or job request is canceled
@@ -288,13 +287,19 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 if (renewJobRequest.IsCompleted)
                 {
                     // renew job request task complete means we run out of retry for the first job request renew.
-                    // TODO: not need to return anything.
-                    Trace.Info("Unable to renew job request for the first time, stop dispatching job to worker.");
+                    Trace.Info($"Unable to renew job request for job {message.JobId} for the first time, stop dispatching job to worker.");
                     return;
                 }
 
                 if (jobRequestCancellationToken.IsCancellationRequested)
                 {
+                    Trace.Info($"Stop renew job request for job {message.JobId}.");
+                    // stop renew lock
+                    lockRenewalTokenSource.Cancel();
+                    // renew job request should never blows up.
+                    await renewJobRequest;
+
+                    // complete job request with result Cancelled
                     await CompleteJobRequestAsync(_poolId, message, lockToken, TaskResult.Canceled);
                     return;
                 }
@@ -322,6 +327,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                                 fileName: workerFileName,
                                 arguments: "spawnclient " + pipeHandleOut + " " + pipeHandleIn,
                                 environment: null,
+                                requireExitCodeZero: false,
+                                outputEncoding: null,
+                                killProcessOnCancel: true,
                                 cancellationToken: workerProcessCancelTokenSource.Token);
                         });
 
@@ -330,7 +338,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     // process may have successfully received the job message.
                     try
                     {
-                        Trace.Info("Send job request message to worker.");
+                        Trace.Info($"Send job request message to worker for job {message.JobId}.");
                         using (var csSendJobRequest = new CancellationTokenSource(ChannelTimeout))
                         {
                             await processChannel.SendAsync(
@@ -342,8 +350,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     catch (OperationCanceledException)
                     {
                         // message send been cancelled.
-                        // timeout 45 sec. kill worker.
-                        Trace.Info("Job request message sending been cancelled, kill running worker.");
+                        // timeout 30 sec. kill worker.
+                        Trace.Info($"Job request message sending for job {message.JobId} been cancelled, kill running worker.");
                         workerProcessCancelTokenSource.Cancel();
                         try
                         {
@@ -351,10 +359,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                         }
                         catch (OperationCanceledException)
                         {
-                            // worker process been killed.
+                            Trace.Info("worker process has been killed.");
                         }
 
-                        Trace.Info("Stop renew job request.");
+                        Trace.Info($"Stop renew job request for job {message.JobId}.");
                         // stop renew lock
                         lockRenewalTokenSource.Cancel();
                         // renew job request should never blows up.
@@ -364,98 +372,111 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                         return;
                     }
 
-                    TaskResult resultOnAbandonOrCancel = TaskResult.Succeeded;
-                    // wait for renewlock, worker process or cancellation token been fired.
-                    var completedTask = await Task.WhenAny(renewJobRequest, workerProcessTask, Task.Delay(-1, jobRequestCancellationToken));
-                    if (completedTask == workerProcessTask)
+                    // we get first jobrequest renew succeed and start the worker process with the job message.
+                    // send notification to machine provisioner.
+                    await notification.JobStarted(message.JobId);
+
+                    try
                     {
-                        // worker finished successfully, complete job request with result, stop renew lock, job has finished.
-                        int returnCode = await workerProcessTask;
-                        Trace.Info("Worker finished. Code: " + returnCode);
+                        TaskResult resultOnAbandonOrCancel = TaskResult.Succeeded;
+                        // wait for renewlock, worker process or cancellation token been fired.
+                        var completedTask = await Task.WhenAny(renewJobRequest, workerProcessTask, Task.Delay(-1, jobRequestCancellationToken));
+                        if (completedTask == workerProcessTask)
+                        {
+                            // worker finished successfully, complete job request with result, stop renew lock, job has finished.
+                            int returnCode = await workerProcessTask;
+                            Trace.Info($"Worker finished for job {message.JobId}. Code: " + returnCode);
 
-                        TaskResult result = TaskResultUtil.TranslateFromReturnCode(returnCode);
-                        Trace.Info($"finish job request with result: {result}");
-                        term.WriteLine(StringUtil.Loc("JobCompleted", DateTime.UtcNow, message.JobName, result));
-                        // complete job request
-                        await CompleteJobRequestAsync(_poolId, message, lockToken, result);
+                            TaskResult result = TaskResultUtil.TranslateFromReturnCode(returnCode);
+                            Trace.Info($"finish job request for job {message.JobId} with result: {result}");
+                            term.WriteLine(StringUtil.Loc("JobCompleted", DateTime.UtcNow, message.JobName, result));
 
-                        Trace.Info("Stop renew job request.");
+                            Trace.Info($"Stop renew job request for job {message.JobId}.");
+                            // stop renew lock
+                            lockRenewalTokenSource.Cancel();
+                            // renew job request should never blows up.
+                            await renewJobRequest;
+
+                            // complete job request
+                            await CompleteJobRequestAsync(_poolId, message, lockToken, result);
+                            return;
+                        }
+                        else if (completedTask == renewJobRequest)
+                        {
+                            resultOnAbandonOrCancel = TaskResult.Abandoned;
+                        }
+                        else
+                        {
+                            resultOnAbandonOrCancel = TaskResult.Canceled;
+                        }
+
+                        // renew job request completed or job request cancellation token been fired for RunAsync(jobrequestmessage)
+                        // cancel worker gracefully first, then kill it after 45 sec
+                        try
+                        {
+                            Trace.Info($"Send job cancellation message to worker for job {message.JobId}.");
+                            using (var csSendCancel = new CancellationTokenSource(ChannelTimeout))
+                            {
+                                await processChannel.SendAsync(
+                                    messageType: MessageType.CancelRequest,
+                                    body: string.Empty,
+                                    cancellationToken: csSendCancel.Token);
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // message send been cancelled.
+                            Trace.Info($"Job cancel message sending for job {message.JobId} been cancelled, kill running worker.");
+                            workerProcessCancelTokenSource.Cancel();
+                            try
+                            {
+                                await workerProcessTask;
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                Trace.Info("worker process has been killed.");
+                            }
+                        }
+
+                        // wait worker to exit within 45 sec, then kill worker.
+                        using (var csKillWorker = new CancellationTokenSource(TimeSpan.FromSeconds(45)))
+                        {
+                            completedTask = await Task.WhenAny(workerProcessTask, Task.Delay(-1, csKillWorker.Token));
+                        }
+
+                        // worker haven't exit within 45 sec.
+                        if (completedTask != workerProcessTask)
+                        {
+                            Trace.Info($"worker process for job {message.JobId} haven't exit after 45 sec, kill running worker.");
+                            workerProcessCancelTokenSource.Cancel();
+                            try
+                            {
+                                await workerProcessTask;
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                Trace.Info("worker process has been killed.");
+                            }
+                        }
+
+                        Trace.Info($"finish job request for job {message.JobId} with result: {resultOnAbandonOrCancel}");
+                        term.WriteLine(StringUtil.Loc("JobCompleted", DateTime.UtcNow, message.JobName, resultOnAbandonOrCancel));
+                        // complete job request with cancel result, stop renew lock, job has finished.
+
+                        Trace.Info($"Stop renew job request for job {message.JobId}.");
                         // stop renew lock
                         lockRenewalTokenSource.Cancel();
                         // renew job request should never blows up.
                         await renewJobRequest;
 
-                        return;
+                        // complete job request
+                        await CompleteJobRequestAsync(_poolId, message, lockToken, resultOnAbandonOrCancel);
                     }
-                    else if (completedTask == renewJobRequest)
+                    finally
                     {
-                        resultOnAbandonOrCancel = TaskResult.Abandoned;
+                        // This should be the last thing to run so we don't notify external parties until actually finished
+                        await notification.JobCompleted(message.JobId);
                     }
-                    else
-                    {
-                        resultOnAbandonOrCancel = TaskResult.Canceled;
-                    }
-
-                    // renew job request completed or job request cancellation token been fired for RunAsync(jobrequestmessage)
-                    // cancel worker gracefully first, then kill it after 45 sec
-                    try
-                    {
-                        Trace.Info("Send job cancellation message to worker.");
-                        using (var csSendCancel = new CancellationTokenSource(ChannelTimeout))
-                        {
-                            await processChannel.SendAsync(
-                                messageType: MessageType.CancelRequest,
-                                body: string.Empty,
-                                cancellationToken: csSendCancel.Token);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // message send been cancelled.
-                        Trace.Info("Job cancel message sending been cancelled, kill running worker.");
-                        workerProcessCancelTokenSource.Cancel();
-                        try
-                        {
-                            await workerProcessTask;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // worker process been killed.
-                        }
-                    }
-
-                    // wait worker to exit within 45 sec, then kill worker.
-                    using (var csKillWorker = new CancellationTokenSource(TimeSpan.FromSeconds(45)))
-                    {
-                        completedTask = await Task.WhenAny(workerProcessTask, Task.Delay(-1, csKillWorker.Token));
-                    }
-
-                    // worker haven't exit within 45 sec.
-                    if (completedTask != workerProcessTask)
-                    {
-                        Trace.Info("worker process haven't exit after 45 sec, kill running worker.");
-                        workerProcessCancelTokenSource.Cancel();
-                        try
-                        {
-                            await workerProcessTask;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // worker process been killed.
-                        }
-                    }
-
-                    Trace.Info($"finish job request with result: {resultOnAbandonOrCancel}");
-                    term.WriteLine(StringUtil.Loc("JobCompleted", DateTime.UtcNow, message.JobName, resultOnAbandonOrCancel));
-                    // complete job request with cancel result, stop renew lock, job has finished.
-                    //TODO: don't finish job request on abandon
-                    await CompleteJobRequestAsync(_poolId, message, lockToken, resultOnAbandonOrCancel);
-
-                    Trace.Info("Stop renew job request.");
-                    // stop renew lock
-                    lockRenewalTokenSource.Cancel();
-                    // renew job request should never blows up.
-                    await renewJobRequest;
                 }
             }
         }
@@ -474,7 +495,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 {
                     request = await agentServer.RenewAgentRequestAsync(poolId, requestId, lockToken, token);
 
-                    Trace.Info($"Successfully renew job request, job is valid till {request.LockedUntil.Value}");
+                    Trace.Info($"Successfully renew job request {requestId}, job is valid till {request.LockedUntil.Value}");
 
                     if (!firstJobRequestRenewed.Task.IsCompleted)
                     {
@@ -485,34 +506,29 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                     // renew again after 60 sec delay
                     await Task.Delay(TimeSpan.FromSeconds(60), token);
                 }
+                catch (TaskAgentJobNotFoundException)
+                {
+                    // no need for retry. the job is not valid anymore.
+                    Trace.Info($"TaskAgentJobNotFoundException received when renew job request {requestId}, job is no longer valid, stop renew job request.");
+                    return;
+                }
+                catch (TaskAgentJobTokenExpiredException)
+                {
+                    // no need for retry. the job is not valid anymore.
+                    Trace.Info($"TaskAgentJobTokenExpiredException received renew job request {requestId}, job is no longer valid, stop renew job request.");
+                    return;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    // OperationCanceledException may caused by http timeout or _lockRenewalTokenSource.Cance();
+                    // Stop renew only on cancellation token fired.
+                    Trace.Info($"job renew has been canceled, stop renew job request {requestId}.");
+                    return;
+                }
                 catch (Exception ex)
                 {
-                    if (ex is TaskAgentJobNotFoundException)
-                    {
-                        // no need for retry. the job is not valid anymore.
-                        Trace.Info("TaskAgentJobNotFoundException received, job is no longer valid, stop renew job request.");
-                        return;
-                    }
-                    else if (ex is TaskAgentJobTokenExpiredException)
-                    {
-                        // no need for retry. the job is not valid anymore.
-                        Trace.Info("TaskAgentJobTokenExpiredException received, job is no longer valid, stop renew job request.");
-                        return;
-                    }
-                    else if (ex is TaskCanceledException)
-                    {
-                        // TaskCanceledException may caused by http timeout or _lockRenewalTokenSource.Cance();
-                        if (token.IsCancellationRequested)
-                        {
-                            Trace.Info("job renew has been canceled, stop renew job request.");
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        Trace.Error("Catch exception during renew agent jobrequest.");
-                        Trace.Error(ex);
-                    }
+                    Trace.Error($"Catch exception during renew agent jobrequest {requestId}.");
+                    Trace.Error(ex);
 
                     // retry
                     TimeSpan remainingTime = TimeSpan.Zero;
@@ -532,55 +548,62 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
 
                     if (remainingTime > TimeSpan.Zero)
                     {
-                        Trace.Verbose($"Retrying lock renewal. Job is still locked for: {remainingTime.TotalSeconds} seconds.");
+                        Trace.Info($"Retrying lock renewal for jobrequest {requestId}. Job is still locked for: {remainingTime.TotalSeconds} seconds.");
                         TimeSpan delayTime = remainingTime.TotalSeconds > 60 ? TimeSpan.FromMinutes(1) : remainingTime;
-                        await Task.Delay(delayTime, token);
+                        try
+                        {
+                            await Task.Delay(delayTime, token);
+                        }
+                        catch (OperationCanceledException) when (token.IsCancellationRequested)
+                        {
+                            Trace.Info($"job renew has been canceled, stop renew job request {requestId}.");
+                        }
                     }
                     else
                     {
+                        Trace.Info($"Lock renewal has run out of retry, stop renew lock for jobrequest {requestId}.");
                         return;
                     }
                 }
             }
-
-            return;
         }
 
         private async Task CompleteJobRequestAsync(int poolId, AgentJobRequestMessage message, Guid lockToken, TaskResult result)
         {
+            Trace.Entering();
             var agentServer = HostContext.GetService<IAgentServer>();
-            bool retrying = false;
-            while (true)
+            int completeJobRequestRetryLimit = 5;
+            List<Exception> exceptions = new List<Exception>();
+            while (completeJobRequestRetryLimit-- > 0)
             {
                 try
                 {
-                    using (var csFinishRequest = new CancellationTokenSource(ChannelTimeout))
-                    {
-                        await agentServer.FinishAgentRequestAsync(poolId, message.RequestId, lockToken, DateTime.UtcNow, result, csFinishRequest.Token);
-                    }
-                    break;
+                    await agentServer.FinishAgentRequestAsync(poolId, message.RequestId, lockToken, DateTime.UtcNow, result, CancellationToken.None);
+                    return;
                 }
                 catch (TaskAgentJobNotFoundException)
                 {
-                    Trace.Info("TaskAgentJobNotFoundException received, job is no longer valid.");
-                    break;
+                    Trace.Info($"TaskAgentJobNotFoundException received, job {message.JobId} is no longer valid.");
+                    return;
                 }
                 catch (TaskAgentJobTokenExpiredException)
                 {
-                    Trace.Info("TaskAgentJobTokenExpiredException received, job is no longer valid.");
-                    break;
+                    Trace.Info($"TaskAgentJobTokenExpiredException received, job {message.JobId} is no longer valid.");
+                    return;
                 }
-                catch (VssServiceResponseException ex) when (!retrying && ex.InnerException != null && ex.InnerException is ArgumentNullException)
+                catch (Exception ex)
                 {
-                    Trace.Error("Retry on ArgumentNullException due a dotnet core bug in Linux/Mac.");
+                    Trace.Error($"Catch exception during complete agent jobrequest {message.RequestId}.");
                     Trace.Error(ex);
-                    retrying = true;
+                    exceptions.Add(ex);
                 }
+
+                // delay 5 seconds before next retry.
+                await Task.Delay(TimeSpan.FromSeconds(5));
             }
 
-            // This should be the last thing to run so we don't notify external parties until actually finished
-            var notification = HostContext.GetService<IJobNotification>();
-            await notification.JobCompleted(message.JobId);
+            // rethrow all catched exceptions during retry.
+            throw new AggregateException(exceptions);
         }
 
         private class WorkerDispatcher : IDisposable
