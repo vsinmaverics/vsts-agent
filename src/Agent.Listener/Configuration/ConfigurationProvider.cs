@@ -52,7 +52,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         public string GetServerUrl(CommandSettings command)
         {
-            return command.GetUrl(false);
+            return command.GetUrl(StringUtil.Loc("ServerUrl"));
         }
 
         public async Task<int> GetPoolId(CommandSettings command)
@@ -114,7 +114,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 return agentPool.Id;
             }
         }
-
     }
 
     public sealed class MachineGroupAgentConfigProvider : AgentService, IConfigurationProvider
@@ -138,11 +137,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             base.Initialize(hostContext);
             _term = hostContext.GetService<ITerminal>();
             _agentServer = HostContext.GetService<IAgentServer>();
+            _machineGroupServer = HostContext.GetService<IMachineGroupServer>();
         }
 
         public string GetServerUrl(CommandSettings command)
         {
-            _serverUrl =  command.GetUrl(true);
+            _serverUrl =  command.GetUrl(StringUtil.Loc("ServerUrlForMachineGroupAgent"));
             Trace.Info("url - {0}", _serverUrl);
 
             string baseUrl = _serverUrl;
@@ -163,11 +163,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             {
                 if (! _isHosted)
                 {
-                    ThrowExceptionForOnPremUrl();
+                    throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
                 }
                 else
                 {
-                    ThrowExceptionForVSTSUrl();
+                    throw new Exception(StringUtil.Loc("UrlValidationFailedForVSTSAccount"));
                 }
             }
             
@@ -178,7 +178,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 
                 if (tokenCount <= 1)
                 {
-                    ThrowExceptionForOnPremUrl();
+                    throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
                 }
                 _collectionName = urlTokenParts[tokenCount-2];
                 _projectName = urlTokenParts[tokenCount-1];
@@ -259,7 +259,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             }
             VssConnection machineGroupconnection = ApiUtil.CreateConnection(new Uri(url), creds);
 
-            _machineGroupServer = HostContext.GetService<IMachineGroupServer>();
             await _machineGroupServer.ConnectAsync(machineGroupconnection);
             Trace.Info("Connect complete for machine group");
         }
@@ -272,8 +271,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         private async Task<int> GetPoolIdAsync(string projectName, string machineGroupName)
         {
-            int poolId = 0;
-
             ArgUtil.NotNull(_machineGroupServer, nameof(_machineGroupServer));
 
             DeploymentMachineGroup machineGroup = (await _machineGroupServer.GetDeploymentMachineGroupsAsync(projectName, machineGroupName)).FirstOrDefault();
@@ -283,22 +280,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 throw new DeploymentMachineGroupNotFoundException(StringUtil.Loc("MachineGroupNotFound", machineGroupName));
             }
 
-            int machineGroupId = machineGroup.Id;
-            Trace.Info("Found machine group {0} with id {1}", machineGroupName, machineGroupId);
-            poolId = machineGroup.Pool.Id;
-            Trace.Info("Found poolId {0} for machine group {1}", poolId, machineGroupName);
+            Trace.Info("Found machine group {0} with id {1}", machineGroupName, machineGroup.Id);
+            Trace.Info("Found poolId {0} for machine group {1}", machineGroup.Pool.Id, machineGroupName);
 
-            return poolId;
-        }
-
-        private void ThrowExceptionForOnPremUrl()
-        {
-            throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
-        }
-
-        private void ThrowExceptionForVSTSUrl()
-        {
-            throw new Exception(StringUtil.Loc("UrlValidationFailedForVSTSAccount"));
+            return machineGroup.Pool.Id;
         }
     }
 }

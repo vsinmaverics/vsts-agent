@@ -168,10 +168,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetUrl(bool isMachineGroup = false)
+        public string GetUrl(string urlDescription)
         {
-            string urlDescription = isMachineGroup ? StringUtil.Loc("ServerUrlForMachineGroupAgent") : StringUtil.Loc("ServerUrl");
-
             return GetArgOrPrompt(
                 name: Constants.Agent.CommandLine.Args.Url,
                 description: urlDescription,
