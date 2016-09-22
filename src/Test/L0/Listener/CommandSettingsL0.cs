@@ -721,6 +721,33 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", nameof(CommandSettings))]
+        public void PromptsForCollectionName()
+        {
+            using (TestHostContext hc = CreateTestContext())
+            {
+                // Arrange.
+                var command = new CommandSettings(hc, args: new string[0]);
+                _promptManager
+                    .Setup(x => x.ReadValue(
+                        Constants.Agent.CommandLine.Args.CollectionName, // argName
+                        StringUtil.Loc("CollectionName"), // description
+                        false, // secret
+                        "DefaultCollection", // defaultValue
+                        Validators.NonEmptyValidator, // validator
+                        false)) // unattended
+                    .Returns("TestCollection");
+
+                // Act.
+                string actual = command.GetCollectionName();
+
+                // Assert.
+                Assert.Equal("TestCollection", actual);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", nameof(CommandSettings))]
         public void PromptsForMachineGroupName()
         {
             using (TestHostContext hc = CreateTestContext())
