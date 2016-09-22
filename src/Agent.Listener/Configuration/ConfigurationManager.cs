@@ -157,8 +157,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
             string agentName = null;
             WriteSection(StringUtil.Loc("RegisterAgentSectionHeader"));
 
-            poolId = await agentProvider.GetPoolId(command);
-            
+            while (true)
+            {
+                try
+                {
+                    poolId = await agentProvider.GetPoolId(command);
+                    break;
+                }
+                catch (Exception e) when (!command.Unattended)
+                {
+                    _term.WriteError(e);
+                    _term.WriteError(agentProvider.GetFailedToFindPoolErrorString());
+                }
+            }
+
             TaskAgent agent;
             while (true)
             {

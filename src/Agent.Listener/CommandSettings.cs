@@ -36,6 +36,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
         {
             Constants.Agent.CommandLine.Args.Agent,
             Constants.Agent.CommandLine.Args.Auth,
+            Constants.Agent.CommandLine.Args.CollectionName,
             Constants.Agent.CommandLine.Args.MachineGroupName,
             Constants.Agent.CommandLine.Args.NotificationPipeName,
             Constants.Agent.CommandLine.Args.Password,
@@ -168,11 +169,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetUrl(string urlDescription)
+        public string GetUrl()
         {
             return GetArgOrPrompt(
                 name: Constants.Agent.CommandLine.Args.Url,
-                description: urlDescription,
+                description: StringUtil.Loc("ServerUrl"),
                 defaultValue: string.Empty,
                 validator: Validators.ServerUrlValidator);
         }
@@ -192,6 +193,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
                 name: Constants.Agent.CommandLine.Args.ProjectName,
                 description: StringUtil.Loc("ProjectName"),
                 defaultValue: defaultValue,
+                validator: Validators.NonEmptyValidator);
+        }
+
+        public string GetCollectionName()
+        {
+            return GetArgOrPrompt(
+                name: Constants.Agent.CommandLine.Args.CollectionName,
+                description: StringUtil.Loc("CollectionName"),
+                defaultValue: "DefaultCollection",
                 validator: Validators.NonEmptyValidator);
         }
 

@@ -63,6 +63,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                     public static readonly string Work = "work";
                     public static readonly string MachineGroupName = "machinegroupname";
                     public static readonly string ProjectName = "projectname";
+                    public static readonly string CollectionName = "collectionname";
 
                     // Secret args. Must be added to the "Secrets" getter as well.
                     public static readonly string Password = "password";

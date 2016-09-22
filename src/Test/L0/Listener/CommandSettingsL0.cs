@@ -495,7 +495,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                     .Returns("some url");
 
                 // Act.
-                string actual = command.GetUrl(StringUtil.Loc("ServerUrl"));
+                string actual = command.GetUrl();
 
                 // Assert.
                 Assert.Equal("some url", actual);
@@ -633,7 +633,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                     .Returns("some url");
 
                 // Act.
-                string actual = command.GetUrl(StringUtil.Loc("ServerUrl"));
+                string actual = command.GetUrl();
 
                 // Assert.
                 Assert.Equal("some url", actual);
@@ -662,7 +662,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                     .Returns("some url");
 
                 // Act.
-                string actual = command.GetUrl(StringUtil.Loc("ServerUrl"));
+                string actual = command.GetUrl();
 
                 // Assert.
                 Assert.Equal("some url", actual);

@@ -19,6 +19,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         Task<int> GetPoolId(CommandSettings command);
 
+        string GetFailedToFindPoolErrorString();
+
         Task<TaskAgent> UpdateAgentAsync(int poolId, TaskAgent agent);
 
         Task<TaskAgent> AddAgentAsync(int poolId, TaskAgent agent);
@@ -51,31 +53,22 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         public string GetServerUrl(CommandSettings command)
         {
-            return command.GetUrl(StringUtil.Loc("ServerUrl"));
+            return command.GetUrl();
         }
 
         public async Task<int> GetPoolId(CommandSettings command)
         {
             int poolId = 0;
             string poolName;
-            while (true)
-            {
-                poolName = command.GetPool();
-                try
-                {
-                    poolId = await GetPoolIdAsync(poolName);
-                    Trace.Info($"PoolId for agent pool '{poolName}' is '{poolId}'.");
-                    break;
-                }
-                catch (Exception e) when (!command.Unattended)
-                {
-                    _term.WriteError(e);
-                    _term.WriteError(StringUtil.Loc("FailedToFindPool"));
-                }
-            }
 
+            poolName = command.GetPool();
+            poolId = await GetPoolIdAsync(poolName);
+            Trace.Info($"PoolId for agent pool '{poolName}' is '{poolId}'.");
+ 
             return poolId;
         }
+
+        public string GetFailedToFindPoolErrorString() => StringUtil.Loc("FailedToFindPool");
 
         public Task<TaskAgent> UpdateAgentAsync(int poolId, TaskAgent agent)
         {
@@ -121,7 +114,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
         private ITerminal _term;
         private IAgentServer _agentServer;
 
-        private string _projectName;
+        private string _projectName = string.Empty;
         private string _collectionName;
         private string _machineGroupName;
         private string _serverUrl;
@@ -141,88 +134,35 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
         public string GetServerUrl(CommandSettings command)
         {
-            _serverUrl =  command.GetUrl(StringUtil.Loc("ServerUrlForMachineGroupAgent"));
+            _serverUrl =  command.GetUrl();
             Trace.Info("url - {0}", _serverUrl);
 
-            string baseUrl = _serverUrl;
             _isHosted = UrlUtil.IsHosted(_serverUrl);
 
-            // VSTS account url - Do validation of server Url includes project name 
-            // On-prem tfs Url - Do validation of tfs Url includes collection and project name 
-
-            Uri uri = new Uri(_serverUrl);                                   //e.g On-prem => http://myonpremtfs:8080/tfs/defaultcollection/myproject
-                                                                             //e.g VSTS => https://myvstsaccount.visualstudio.com/myproject
-
-            string urlAbsolutePath = uri.AbsolutePath;                       //e.g tfs/defaultcollection/myproject
-                                                                             //e.g myproject
-            string[] urlTokenParts = urlAbsolutePath.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);      //e.g tfs,defaultcollection,myproject
-            int tokenCount = urlTokenParts.Length;
-
-            if (tokenCount == 0)
-            {
-                if (! _isHosted)
-                {
-                    throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
-                }
-                else
-                {
-                    throw new Exception(StringUtil.Loc("UrlValidationFailedForVSTSAccount"));
-                }
-            }
-            
-            // for onprem ensure collection/project is format
+            // for onprem tfs, collection is required for machineGroup
             if (! _isHosted)
             {
-                Trace.Info("Provided url is for onprem tfs");
-                
-                if (tokenCount <= 1)
-                {
-                    throw new Exception(StringUtil.Loc("UrlValidationFailedForOnPremTfs"));
-                }
-                _collectionName = urlTokenParts[tokenCount-2];
-                _projectName = urlTokenParts[tokenCount-1];
-                Trace.Info("collectionName - {0}", _collectionName);
-
-                baseUrl = _serverUrl.Replace(_projectName, "").Replace(_collectionName, "").TrimEnd(new char[] { '/'});
-            }
-            else
-            {
-                Trace.Info("Provided url is for vsts account");
-                _projectName = urlTokenParts.Last();
-
-                baseUrl = new Uri(_serverUrl).GetLeftPart(UriPartial.Authority);
+                Trace.Info("Provided url is for onprem tfs, need collection name");
+                _collectionName = command.GetCollectionName();
             }
 
-            Trace.Info("projectName - {0}", _projectName);
-
-            return baseUrl;
+            return _serverUrl;
         }
 
         public async Task<int> GetPoolId(CommandSettings command)
         {
             int poolId;
-            while (true)
-            {
-                _machineGroupName = command.GetMachineGroupName();
-                try
-                {
-                    poolId =  await GetPoolIdAsync(_projectName, _machineGroupName);
-                    Trace.Info($"PoolId for machine group '{_machineGroupName}' is '{poolId}'.");
-                    break;
-                }
-                catch (Exception e) when (!command.Unattended)
-                {
-                    _term.WriteError(e);
-                }
 
-                _term.WriteError(StringUtil.Loc("FailedToFindMachineGroup"));
+            _projectName = command.GetProjectName(_projectName);
+            _machineGroupName = command.GetMachineGroupName();
 
-                // In case of failure ensure to get the project name again
-                _projectName = command.GetProjectName(_projectName);
-            }
+            poolId =  await GetPoolIdAsync(_projectName, _machineGroupName);
+            Trace.Info($"PoolId for machine group '{_machineGroupName}' is '{poolId}'.");
             
             return poolId;
         }
+
+        public string GetFailedToFindPoolErrorString() => StringUtil.Loc("FailedToFindMachineGroup");
 
         public Task<TaskAgent> UpdateAgentAsync(int poolId, TaskAgent agent)
         {

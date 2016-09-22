@@ -41,6 +41,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
         private string _expectedVSTSServerUrl = "https://L0ConfigTest.visualstudio.com";
         private string _expectedAgentName = "expectedAgentName";
         private string _expectedPoolName = "poolName";
+        private string _expectedCollectionName = "testCollectionName";
         private string _expectedProjectName = "testProjectName";
         private string _expectedMachineGroupName = "testMachineGroupName";
         private string _expectedAuthType = "pat";
@@ -206,7 +207,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 IConfigurationManager configManager = new ConfigurationManager();
                 configManager.Initialize(tc);
 
-                string url = _expectedVSTSServerUrl + "/" + _expectedProjectName;
                 trace.Info("Preparing command line arguments for vsts scenario");
                 var command = new CommandSettings(
                     tc,
@@ -217,8 +217,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                        "--acceptteeeula",
 #endif
                         "--machinegroup",
-                        "--url", url,
+                        "--url", _expectedVSTSServerUrl,
                         "--agent", _expectedAgentName,
+                        "--projectname", _expectedProjectName,
                         "--machinegroupname", _expectedMachineGroupName,
                         "--work", _expectedWorkFolder,
                         "--auth", _expectedAuthType,
@@ -247,9 +248,75 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Listener.Configuration
                 Assert.True(s.PoolId.Equals(3));
                 Assert.True(s.WorkFolder.Equals(_expectedWorkFolder));
                 Assert.True(s.MachineGroupName.Equals(_expectedMachineGroupName));
+                Assert.True(s.ProjectName.Equals(_expectedProjectName));
             }
         }
-        
+
+        /*
+        * Agent configuartion as deployment agent against on prem tfs
+        * Collectioion name is required
+        */
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "ConfigurationManagement")]
+        public async Task CanEnsureMachineGroupAgentConfigureOnPremScenario()
+        {
+            using (TestHostContext tc = CreateTestContext())
+            {
+                Tracing trace = tc.GetTrace();
+
+                trace.Info("Creating config manager");
+                IConfigurationManager configManager = new ConfigurationManager();
+                configManager.Initialize(tc);
+
+                var onPremTfsUrl = "http://localtfs:8080/tfs";
+
+                trace.Info("Preparing command line arguments for vsts scenario");
+                var command = new CommandSettings(
+                    tc,
+                    new[]
+                    {
+                        "configure",
+#if !OS_WINDOWS
+                       "--acceptteeeula",
+#endif
+                        "--machinegroup",
+                        "--url", onPremTfsUrl,
+                        "--agent", _expectedAgentName,
+                        "--collectionname", _expectedCollectionName,
+                        "--projectname", _expectedProjectName,
+                        "--machinegroupname", _expectedMachineGroupName,
+                        "--work", _expectedWorkFolder,
+                        "--auth", _expectedAuthType,
+                        "--token", _expectedToken
+                    });
+                trace.Info("Constructed.");
+
+                _store.Setup(x => x.IsConfigured()).Returns(false);
+                _configMgrAgentSettings = null;
+
+                _extnMgr.Setup(x => x.GetExtensions<IConfigurationProvider>()).Returns(GetConfigurationProviderList(tc));
+
+                var expectedMachineGroups = new List<DeploymentMachineGroup>() { new DeploymentMachineGroup() { Pool = new TaskAgentPoolReference(new Guid(), 7), Name = "Test-MachineGroup" } };
+                _machineGroupServer.Setup(x => x.GetDeploymentMachineGroupsAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.FromResult(expectedMachineGroups));
+
+                trace.Info("Ensuring all the required parameters are available in the command line parameter");
+                await configManager.ConfigureAsync(command);
+
+                _store.Setup(x => x.IsConfigured()).Returns(true);
+
+                trace.Info("Configured, verifying all the parameter value");
+                var s = configManager.LoadSettings();
+                Assert.NotNull(s);
+                Assert.True(s.ServerUrl.Equals(onPremTfsUrl));
+                Assert.True(s.AgentName.Equals(_expectedAgentName));
+                Assert.True(s.PoolId.Equals(7));
+                Assert.True(s.WorkFolder.Equals(_expectedWorkFolder));
+                Assert.True(s.MachineGroupName.Equals(_expectedMachineGroupName));
+                Assert.True(s.ProjectName.Equals(_expectedProjectName));
+            }
+        }
+
         // Init the Agent Config Provider
         private List<IConfigurationProvider> GetConfigurationProviderList(TestHostContext tc)
         {
