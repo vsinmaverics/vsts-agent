@@ -311,8 +311,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
                 PoolId = poolId,
                 PoolName = poolName,
                 ServerUrl = serverUrl,
-                WorkFolder = workFolder,
-                MachineGroup = command.MachineGroup
+                WorkFolder = workFolder
             };
 
             // This is required in case agent is configured as DeploymentAgent. It will make entry for projectName and MachineGroup
@@ -404,6 +403,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener.Configuration
 
                     var extensionManager = HostContext.GetService<IExtensionManager>();
                     IConfigurationProvider agentProvider = (extensionManager.GetExtensions<IConfigurationProvider>()).FirstOrDefault(x => x.ConfigurationProviderType == agentType);
+                    ArgUtil.NotNull(agentProvider, agentType);
 
                     List<TaskAgent> agents = await agentSvr.GetAgentsAsync(settings.PoolId, settings.AgentName);
                     if (agents.Count == 0)
