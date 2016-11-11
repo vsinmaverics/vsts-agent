@@ -186,8 +186,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 }
             }
 
-            //Section
-            this.Section($"Finishing: {_record.Name}");
+            // Update Section only if its not skipped
+            if (Result != TaskResult.Skipped)
+            {
+                this.Section($"Finishing: {_record.Name}");
+            }
 
             _cancellationTokenSource?.Dispose();
 
