@@ -67,7 +67,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     step.ExecutionContext.Result = TaskResult.Skipped;
                     
                     // Complete the step context.
-                    step.ExecutionContext.Complete();
+                    step.ExecutionContext.Skip();
 
                     continue;
                 }
