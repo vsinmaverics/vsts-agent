@@ -206,7 +206,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
                     async () =>
                         {
                             var releaseFileSystemManager = HostContext.GetService<IReleaseFileSystemManager>();
-                            executionContext.Output(StringUtil.Loc("RMEnsureArtifactFolderExist", downloadFolderPath));
+                            executionContext.Output(StringUtil.Loc("RMEnsureArtifactFolderExistsAndIsClean", downloadFolderPath));
                             releaseFileSystemManager.CleanupDirectory(downloadFolderPath, executionContext.CancellationToken);
 
                             await extension.DownloadAsync(executionContext, artifactDefinition, downloadFolderPath);
