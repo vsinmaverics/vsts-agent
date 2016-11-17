@@ -270,11 +270,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Worker
                 // Arrange.
                 var variableSets = new[]
                 {
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, alwaysRun: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, continueOnError: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, critical: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, alwaysRun: true, continueOnError: true, critical: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep() },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(alwaysRun: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(continueOnError: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(critical: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(alwaysRun: true, continueOnError: true, critical: true) },
                 };
                 foreach (var variableSet in variableSets)
                 {
@@ -290,6 +290,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Worker
                     Assert.Equal(2, variableSet.Length);
                     variableSet[0].Verify(x => x.RunAsync());
                     variableSet[1].Verify(x => x.RunAsync(), Times.Never());
+                    Assert.Equal(TaskResult.Skipped, variableSet[1].Object.ExecutionContext.Result);
                 }
             }
         }
@@ -304,13 +305,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Worker
                 // Arrange.
                 var variableSets = new[]
                 {
-                    new[] { CreateStep(TaskResult.Failed), CreateStep(TaskResult.Succeeded) },
-                    new[] { CreateStep(TaskResult.Failed), CreateStep(TaskResult.Succeeded, continueOnError: true) },
-                    new[] { CreateStep(TaskResult.Failed), CreateStep(TaskResult.Succeeded, critical: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, alwaysRun: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, continueOnError: true) },
-                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(TaskResult.Succeeded, critical: true) },
+                    new[] { CreateStep(TaskResult.Failed), CreateStep() },
+                    new[] { CreateStep(TaskResult.Failed), CreateStep(continueOnError: true) },
+                    new[] { CreateStep(TaskResult.Failed), CreateStep(critical: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep() },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(alwaysRun: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(continueOnError: true) },
+                    new[] { CreateStep(TaskResult.Failed, critical: true), CreateStep(critical: true) },
                 };
                 foreach (var variableSet in variableSets)
                 {
@@ -326,11 +327,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Worker
                     Assert.Equal(2, variableSet.Length);
                     variableSet[0].Verify(x => x.RunAsync());
                     variableSet[1].Verify(x => x.RunAsync(), Times.Never());
+                    Assert.Equal(TaskResult.Skipped, variableSet[1].Object.ExecutionContext.Result);
                 }
             }
         }
 
-        private Mock<IStep> CreateStep(TaskResult result, Boolean alwaysRun = false, Boolean continueOnError = false, Boolean critical = false, Boolean isFinally = false)
+        private Mock<IStep> CreateStep(TaskResult? result = null, Boolean alwaysRun = false, Boolean continueOnError = false, Boolean critical = false, Boolean isFinally = false)
         {
             // Setup the step.
             var step = new Mock<IStep>();
@@ -346,7 +348,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests.Worker
             stepContext.SetupAllProperties();
             stepContext.Setup(x => x.Variables).Returns(_variables);
             stepContext.Object.Result = result;
+            stepContext.Setup(x => x.Skip()).Callback(() => stepContext.Object.Result = TaskResult.Skipped);
             step.Setup(x => x.ExecutionContext).Returns(stepContext.Object);
+
             return step;
         }
 

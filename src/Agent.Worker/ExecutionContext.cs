@@ -221,7 +221,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
 
             _record.StartTime = _record.FinishTime = DateTime.UtcNow;
             _record.State = TimelineRecordState.Completed;
-            _record.PercentComplete = 100;
+            _record.PercentComplete = 0;
             _record.Result = TaskResult.Skipped;
 
             _jobServerQueue.QueueTimelineRecordUpdate(_mainTimelineId, _record);
