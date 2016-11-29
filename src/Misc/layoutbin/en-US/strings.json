@@ -76,6 +76,7 @@
   "ErrorOccurredWhilePublishingCCFiles": "Error occurred while publishing code coverage files. Error: {0}",
   "EulasSectionHeader": "End User License Agreements",
   "Failed": "Failed: ",
+  "FailedCleaningupRMArtifactDirecotyr": "Failed to cleanup RM artifact directory '{0}'.",
   "FailedDeletingTempDirectory0Message1": "Failed to delete temporary directory '{0}'. {1}",
   "FailedToAddTags": "Failed to apply tags to agent. Try again or ctrl-c to quit. Alternatively you may go to machine group web page to add tags",
   "FailedToConnect": "Failed to connect.  Try again or ctrl-c to quit",

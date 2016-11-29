@@ -207,7 +207,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
                         {
                             var releaseFileSystemManager = HostContext.GetService<IReleaseFileSystemManager>();
                             executionContext.Output(StringUtil.Loc("RMEnsureArtifactFolderExistsAndIsClean", downloadFolderPath));
-                            releaseFileSystemManager.CleanupDirectory(downloadFolderPath, executionContext.CancellationToken);
+                            try
+                            {
+                                releaseFileSystemManager.CleanupDirectory(downloadFolderPath, executionContext.CancellationToken);
+                            }
+                            catch(Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
+                            {
+                                throw new ArtifactCleanupFailedException(StringUtil.Loc("FailedCleaningupRMArtifactDirecotyr", downloadFolderPath), ex);
+                            }
 
                             await extension.DownloadAsync(executionContext, artifactDefinition, downloadFolderPath);
                         });
@@ -345,12 +352,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
 
         private void LogDownloadFailureTelemetry(IExecutionContext executionContext, Exception ex)
         {
-            var code = (ex is Artifacts.ArtifactDownloadException) ? DownloadArtifactsFailureUserError : DownloadArtifactsFailureSystemError;
+            var code = (ex is Artifacts.ArtifactDownloadException || ex is ArtifactCleanupFailedException) ? DownloadArtifactsFailureUserError : DownloadArtifactsFailureSystemError;
             var issue = new Issue
             {
                 Type = IssueType.Error,
                 Message = StringUtil.Loc("DownloadArtifactsFailed", ex)
             };
+
+            issue.Data.Add("AgentVersion", Constants.Agent.Version);
             issue.Data.Add("code", code);
             issue.Data.Add("TaskId", DownloadArtifactsTaskId.ToString());
 
