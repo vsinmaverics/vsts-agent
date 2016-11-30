@@ -211,9 +211,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
                             {
                                 releaseFileSystemManager.CleanupDirectory(downloadFolderPath, executionContext.CancellationToken);
                             }
-                            catch(Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
+                            catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
                             {
-                                throw new ArtifactCleanupFailedException(StringUtil.Loc("FailedCleaningupRMArtifactDirecotyr", downloadFolderPath), ex);
+                                throw new ArtifactCleanupFailedException(StringUtil.Loc("FailedCleaningupRMArtifactDirectory", downloadFolderPath), ex);
                             }
 
                             await extension.DownloadAsync(executionContext, artifactDefinition, downloadFolderPath);
