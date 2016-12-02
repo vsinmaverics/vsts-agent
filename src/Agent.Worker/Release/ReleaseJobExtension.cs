@@ -228,25 +228,37 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
         private void CleanUpArtifactsFolder(IExecutionContext executionContext, string artifactsWorkingFolder)
         {
             Trace.Entering();
-            executionContext.Output(StringUtil.Loc("RMCleaningArtifactsDirectory", artifactsWorkingFolder));
-            try
-            {
-                if (Directory.Exists(artifactsWorkingFolder))
-                {
-                    IOUtil.DeleteDirectory(artifactsWorkingFolder, executionContext.CancellationToken);
-                }
 
-                Directory.CreateDirectory(artifactsWorkingFolder);
-            }
-            catch (Exception ex)
+            RetryExecutor retryExecutor = new RetryExecutor();
+            retryExecutor.ShouldRetryAction = (ex) =>
             {
+                executionContext.Output(StringUtil.Loc("FailedCleaningupRMArtifactDirectory", artifactsWorkingFolder));
                 Trace.Error(ex);
-                // Do not throw here
-            }
-            finally
-            {
-                executionContext.Output(StringUtil.Loc("RMCleanedUpArtifactsDirectory", artifactsWorkingFolder));
-            }
+
+                return true;
+            };
+
+            retryExecutor.Execute(
+                () =>
+                {
+                    executionContext.Output(StringUtil.Loc("RMCleaningArtifactsDirectory", artifactsWorkingFolder));
+
+                    try
+                    {
+                        if (Directory.Exists(artifactsWorkingFolder))
+                        {
+                            IOUtil.DeleteDirectory(artifactsWorkingFolder, executionContext.CancellationToken);
+                        }
+
+                        Directory.CreateDirectory(artifactsWorkingFolder);
+                    }
+                    catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
+                    {
+                        throw new ArtifactCleanupFailedException(StringUtil.Loc("FailedCleaningupRMArtifactDirectory", artifactsWorkingFolder), ex);
+                    }
+                });
+
+            executionContext.Output(StringUtil.Loc("RMCleanedUpArtifactsDirectory", artifactsWorkingFolder));
         }
 
         private void InitializeAgent(IExecutionContext executionContext, out bool skipArtifactsDownload, out Guid teamProjectId, out string artifactsWorkingFolder, out int releaseId)
