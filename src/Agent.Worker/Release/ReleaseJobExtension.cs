@@ -232,7 +232,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release
             RetryExecutor retryExecutor = new RetryExecutor();
             retryExecutor.ShouldRetryAction = (ex) =>
             {
-                executionContext.Output(StringUtil.Loc("FailedCleaningupRMArtifactDirectory", artifactsWorkingFolder));
+                executionContext.Output(StringUtil.Loc("RetryingRMArtifactCleanUp", artifactsWorkingFolder, ex));
                 Trace.Error(ex);
 
                 return true;
