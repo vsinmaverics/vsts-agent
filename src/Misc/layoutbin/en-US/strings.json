@@ -376,7 +376,7 @@
   "StepTimedOut": "The task has timed out.",
   "Success": "Succeeded: ",
   "SupportedRepositoryEndpointNotFound": "Unable to match any source repository endpoints with any of the supported source providers.",
-  "SupportedTaskHandlerNotFound": "Supported task execution handler not found. Supported handlers: {0}",
+  "SupportedTaskHandlerNotFound": "Supported task execution handler not found. Supported handlers: {0}. Task might not capable to execute on current platform, try update to latest version agent or contact task author for support.",
   "SvnBranchCheckedOut": "Checked out branch {0} for repository {1} at revision {2}",
   "SvnEmptyServerPath": "The empty relative server path is mapped to '{0}'.",
   "SvnFileAlreadyExists": "The file {0} already exists",
