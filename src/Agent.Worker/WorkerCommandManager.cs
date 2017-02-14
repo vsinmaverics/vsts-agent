@@ -1,4 +1,5 @@
 ﻿using Microsoft.TeamFoundation.DistributedTask.WebApi;
+using Microsoft.TeamFoundation.Common;
 using Microsoft.VisualStudio.Services.Agent.Util;
 using System;
 using System.Collections.Generic;
@@ -52,6 +53,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             IWorkerCommandExtension extension;
             if (_commandExtensions.TryGetValue(command.Area, out extension))
             {
+                if (!extension.SupportedHostType.IsNullOrEmpty() &&
+                    !string.Equals(context.Variables.System_HostType, extension.SupportedHostType, StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Error(StringUtil.Loc("CommandNotSupported", command.Area, context.Variables.System_HostType));
+                    context.CommandResult = TaskResult.Failed;
+                    return false;
+                }
+
                 // process logging command in serialize oreder.
                 lock (_commandSerializeLock)
                 {
@@ -88,6 +97,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
     public interface IWorkerCommandExtension : IExtension
     {
         string CommandArea { get; }
+
+        string SupportedHostType { get; }
 
         void ProcessCommand(IExecutionContext context, Command command);
     }
