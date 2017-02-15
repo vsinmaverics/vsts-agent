@@ -155,6 +155,19 @@ namespace Microsoft.VisualStudio.Services.Agent
             public static readonly string GatedRunCI = "GatedRunCI";
         }
 
+        public static class EnvironmentVariables
+        {
+            public static readonly NpmConfigCache = "NPM_CONFIG_CACHE";
+            public static readonly NuGetPackages = "NUGET_PACKAGES";
+            public static readonly OverrideNpmConfigCache = "VSTS_OVERRIDE_NPM_CONFIG_CACHE";
+            public static readonly OverrideNuGetPackages = "VSTS_OVERRIDE_NUGET_PACKAGES";
+#if OS_WINDOWS
+            public static readonly OverrideTemp = "VSTS_OVERRIDE_TEMP";
+            public static readonly string Temp = "TEMP";
+            public static readonly string Tmp = "TMP";
+#endif
+        }
+
         public static class Expressions
         {
             public static readonly string Always = "always";
@@ -166,10 +179,13 @@ namespace Microsoft.VisualStudio.Services.Agent
         public static class Path
         {
             public static readonly string BinDirectory = "bin";
+            public static readonly string CacheDirectory = "_cache";
             public static readonly string DiagDirectory = "_diag";
             public static readonly string ExternalsDirectory = "externals";
             public static readonly string LegacyPSHostDirectory = "vstshost";
+            public static readonly string NpmCacheDirectory = "npm";
             public static readonly string ServerOMDirectory = "vstsom";
+            public static readonly string TempDirectory = "_temp";
             public static readonly string TeeDirectory = "tee";
             public static readonly string TaskJsonFile = "task.json";
             public static readonly string TasksDirectory = "_tasks";
